@@ -329,8 +329,9 @@ async function runOptimizationLogic(userMessage) {
                         const safeTagName = escapeRegExp(tagName);
                         const regex = new RegExp(`<${safeTagName}>([\\s\\S]*?)<\\/${safeTagName}>`, 'gi');
                         const matches = processedMessage.match(regex);
-                        if (matches) {
-                            extractedParts.push(...matches);
+                        // [逻辑修改] 只提取最后一个满足条件的标签
+                        if (matches && matches.length > 0) {
+                            extractedParts.push(matches[matches.length - 1]);
                         }
                     });
 

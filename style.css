@@ -2,51 +2,117 @@
 
 /* 1. 基础与字体设置 */
 #qrf_settings_panel {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
     color: var(--text_color, #E0E0E0);
+    line-height: 1.6;
+    font-size: 14px;
+    letter-spacing: 0.01em;
 }
 
-/* 2. 头部与尾部 */
+/* 2. 滚动条美化 */
+#qrf_settings_panel ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+#qrf_settings_panel ::-webkit-scrollbar-track {
+    background: var(--background-color-tertiary, #2a2a2a);
+    border-radius: 4px;
+}
+
+#qrf_settings_panel ::-webkit-scrollbar-thumb {
+    background: var(--primary, #00BFFF);
+    border-radius: 4px;
+    transition: background 0.3s ease;
+}
+
+#qrf_settings_panel ::-webkit-scrollbar-thumb:hover {
+    background: var(--primary-hover, #4FC3F7);
+}
+
+/* 3. 头部与尾部 */
 #qrf_settings_panel .qrf-header {
     text-align: center;
-    padding-bottom: 15px;
+    padding: 20px 0 15px;
     margin-bottom: 25px;
-    border-bottom: 1px solid var(--border-color, #3a3a3a);
+    border-bottom: 2px solid var(--border-color, #3a3a3a);
+    position: relative;
+    background: linear-gradient(135deg, rgba(0, 191, 255, 0.05), rgba(79, 195, 247, 0.05));
+    border-radius: 12px 12px 0 0;
 }
 
 #qrf_settings_panel .qrf-header h4 {
     margin: 0;
-    font-size: 1.4em;
-    font-weight: 400; /* 更柔和的字重 */
+    font-size: 1.5em;
+    font-weight: 500;
     color: var(--text_color, #FFFFFF);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    letter-spacing: 0.02em;
 }
 
 #qrf_settings_panel .qrf-header h4 i {
     margin-right: 12px;
-    color: var(--primary, #00BFFF); /* 深天蓝作为强调色 */
+    color: var(--primary, #00BFFF);
+    font-size: 1.2em;
+    animation: pulse 2s infinite ease-in-out;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
 }
 
 #qrf_settings_panel .qrf_footer {
     text-align: center;
-    padding-top: 15px;
+    padding: 15px 0;
     margin-top: 25px;
-    border-top: 1px solid var(--border-color, #3a3a3a);
-    font-size: 0.8em;
+    border-top: 2px solid var(--border-color, #3a3a3a);
+    font-size: 0.85em;
     color: var(--text_secondary, #999);
+    background: linear-gradient(135deg, rgba(0, 191, 255, 0.02), rgba(79, 195, 247, 0.02));
+    border-radius: 0 0 12px 12px;
 }
 
-/* 3. 设置组 (Fieldset) */
+/* 4. 设置组 (Fieldset) */
 #qrf_settings_panel .settings-group {
-    background-color: var(--background-color-secondary, rgba(40, 40, 40, 0.8));
+    background: linear-gradient(135deg, var(--background-color-secondary, rgba(40, 40, 40, 0.9)), var(--background-color-secondary, rgba(50, 50, 50, 0.9)));
     border: 1px solid var(--border-color, #3a3a3a);
     padding: 20px 25px;
     margin-bottom: 25px;
-    border-radius: 12px; /* 更大的圆角 */
-    transition: border-color 0.3s ease;
+    border-radius: 12px;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    position: relative;
+    overflow: hidden;
+}
+
+#qrf_settings_panel .settings-group::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--primary, #00BFFF), var(--primary-hover, #4FC3F7), var(--primary, #00BFFF));
+    background-size: 200% 100%;
+    animation: shimmer 3s infinite linear;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+@keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
 }
 
 #qrf_settings_panel .settings-group:hover {
     border-color: var(--primary-hover, #4FC3F7);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+    transform: translateY(-2px);
+}
+
+#qrf_settings_panel .settings-group:hover::before {
+    opacity: 1;
 }
 
 #qrf_settings_panel .settings-group legend {
@@ -54,11 +120,15 @@
     font-size: 1.15em;
     padding: 0 10px;
     color: var(--text_color, #F0F0F0);
+    background: var(--background-color-secondary, rgba(40, 40, 40, 0.9));
+    border-radius: 6px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 #qrf_settings_panel .settings-group legend i {
     margin-right: 10px;
     color: var(--primary, #00BFFF);
+    font-size: 1.1em;
 }
 
 /* 4. 设置项布局与标签 */
@@ -283,9 +353,30 @@
 }
 
 
-/* 10. 世界书条目列表 */
+/* 10. 世界书筛选框 */
+.qrf_worldbook_filter_wrapper {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+    align-items: center;
+}
+
+.qrf_worldbook_filter_wrapper input {
+    flex-grow: 1;
+}
+
+.qrf_worldbook_filter_wrapper button {
+    flex-shrink: 0;
+    width: 38px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* 11. 世界书条目列表 */
 .qrf_worldbook_entry_list {
-    max-height: 220px;
+    max-height: 350px;
     overflow-y: auto;
     border: 1px solid var(--border-color, #444);
     padding: 10px;
@@ -306,6 +397,10 @@
     background-color: var(--primary-hover-faded, rgba(0, 191, 255, 0.1));
 }
 
+.qrf_worldbook_entry_item.filtered-out {
+    display: none;
+}
+
 .qrf_worldbook_entry_item input[type="checkbox"] {
     margin-right: 12px;
     width: 16px;
@@ -321,7 +416,20 @@
     margin-bottom: 0;
 }
 
-/* 11. 菜单按钮统一样式 */
+.qrf_worldbook_entry_item.highlighted {
+    background-color: var(--primary-hover-faded, rgba(0, 191, 255, 0.15));
+    border-left: 3px solid var(--primary, #00BFFF);
+    padding-left: 9px;
+}
+
+.qrf_worldbook_no_results {
+    text-align: center;
+    color: var(--text_tertiary, #999);
+    font-style: italic;
+    padding: 20px;
+}
+
+/* 12. 菜单按钮统一样式 */
 #qrf_settings_panel .menu_button {
     height: 38px; /* 与输入框高度接近 */
     padding: 0 15px; /* 增加水平内边距 */
@@ -331,4 +439,129 @@
     box-sizing: border-box;
     min-width: 90px; /* 增加最小宽度以确保按钮等宽并容纳内容 */
     white-space: nowrap; /* 防止文字换行 */
+    background: linear-gradient(135deg, var(--primary, #00BFFF), var(--primary-hover, #4FC3F7));
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-weight: 500;
+    font-size: 0.9em;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+    position: relative;
+    overflow: hidden;
+}
+
+#qrf_settings_panel .menu_button:hover {
+    background: linear-gradient(135deg, var(--primary-hover, #4FC3F7), var(--primary, #00BFFF));
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+#qrf_settings_panel .menu_button:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+#qrf_settings_panel .menu_button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+#qrf_settings_panel .menu_button i {
+    margin-right: 5px;
+}
+
+#qrf_settings_panel .menu_button i:last-child {
+    margin-right: 0;
+}
+
+/* 13. 预设区域按钮特殊样式 */
+#qrf_settings_panel .qrf_preset_selector_wrapper .menu_button {
+    min-width: auto;
+    padding: 0 8px;
+    font-size: 0.85em;
+    height: 32px;
+    flex-shrink: 0;
+}
+
+#qrf_settings_panel .qrf_preset_selector_wrapper .menu_button i {
+    margin-right: 0;
+}
+
+/* 14. 重置按钮特殊样式 */
+#qrf_settings_panel .qrf_reset_button {
+    background: linear-gradient(135deg, #6c757d, #868e96);
+    min-width: auto;
+    padding: 5px 10px;
+    font-size: 0.8em;
+    height: 28px;
+}
+
+#qrf_settings_panel .qrf_reset_button:hover {
+    background: linear-gradient(135deg, #868e96, #6c757d);
+}
+
+/* 14. 输入框和下拉菜单增强样式 */
+#qrf_settings_panel .text_pole,
+#qrf_settings_panel select {
+    width: 100%;
+    background-color: var(--background-color, #1A1A1A);
+    color: var(--text_color, #E0E0E0);
+    border: 1px solid var(--border-color, #444);
+    border-radius: 8px;
+    padding: 12px;
+    box-sizing: border-box;
+    transition: all 0.3s ease;
+    font-family: inherit;
+    font-size: 0.9em;
+}
+
+#qrf_settings_panel .text_pole:focus,
+#qrf_settings_panel select:focus {
+    outline: none;
+    border-color: var(--primary, #00BFFF);
+    box-shadow: 0 0 0 3px rgba(0, 191, 255, 0.2);
+    transform: translateY(-1px);
+}
+
+#qrf_settings_panel textarea.text_pole {
+    resize: vertical;
+    min-height: 90px;
+    line-height: 1.5;
+}
+
+/* 15. 下拉菜单优化 */
+#qrf_settings_panel select {
+    appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, var(--text_color, #E0E0E0) 50%),
+                      linear-gradient(135deg, var(--text_color, #E0E0E0) 50%, transparent 50%);
+    background-position: calc(100% - 15px) calc(1em + 2px),
+                         calc(100% - 10px) calc(1em + 2px);
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+    padding-right: 35px;
+}
+
+#qrf_settings_panel select[multiple] {
+    background-image: none;
+    padding-right: 12px;
+}
+
+/* 16. 数字输入框优化 */
+#qrf_settings_panel input[type="number"] {
+    -moz-appearance: textfield;
+}
+
+#qrf_settings_panel input[type="number"]::-webkit-outer-spin-button,
+#qrf_settings_panel input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+/* 17. 密码输入框优化 */
+#qrf_settings_panel input[type="password"] {
+    letter-spacing: 0.05em;
 }

@@ -403,11 +403,11 @@ async function loadWorldbookEntries(panel) {
             if (!entry.enabled) return;
 
             const entryId = `qrf-entry-${entry.bookName.replace(/[^a-zA-Z0-9]/g, '-')}-${entry.uid}`;
-            // [功能更新] 反向选择逻辑：默认全部勾选，只取消勾选那些被记录为“禁用”的条目。
+            // [功能更新] 反向选择逻辑：默认全部勾选，只取消勾选那些被记录为"禁用"的条目。
             const isDisabled = disabledEntries[entry.bookName]?.includes(entry.uid);
 
             const item = $(`
-                <div class="qrf_worldbook_entry_item">
+                <div class="qrf_worldbook_entry_item" data-book="${entry.bookName}" data-uid="${entry.uid}">
                     <input type="checkbox" id="${entryId}" data-book="${entry.bookName}" data-uid="${entry.uid}" ${!isDisabled ? 'checked' : ''}>
                     <label for="${entryId}" title="世界书: ${entry.bookName}\nUID: ${entry.uid}">${entry.comment || '无标题条目'}</label>
                 </div>
@@ -417,6 +417,13 @@ async function loadWorldbookEntries(panel) {
         
         visibleEntries = container.children().length;
         countDisplay.text(`显示 ${visibleEntries} / ${totalEntries} 条目.`);
+        
+        // 初始化筛选状态
+        const filterInput = panel.find('#qrf_worldbook_entry_filter');
+        if (filterInput.val().trim() !== '') {
+            // 如果有筛选文本，触发筛选事件以更新显示
+            filterInput.trigger('input');
+        }
 
     } catch (error) {
         console.error(`[${extensionName}] 加载世界书条目失败:`, error);
@@ -794,7 +801,14 @@ function loadSettings(panel) {
     
     // 加载世界书和条目 (使用角色卡设置)
     loadWorldbooks(panel).then(() => {
-        loadWorldbookEntries(panel);
+        loadWorldbookEntries(panel).then(() => {
+            // 确保筛选框在加载后被正确初始化
+            const filterInput = panel.find('#qrf_worldbook_entry_filter');
+            if (filterInput.val().trim() !== '') {
+                // 如果有筛选文本，触发筛选事件以更新显示
+                setTimeout(() => filterInput.trigger('input'), 100);
+            }
+        });
     });
     
     // 加载酒馆API预设
@@ -1082,12 +1096,55 @@ export function initializeBindings() {
     });
 
     panel.on('click.qrf', '#qrf_worldbook_entry_select_all', () => {
-        panel.find('#qrf_worldbook_entry_list_container input[type="checkbox"]').prop('checked', true);
+        // 只选择当前筛选结果中可见的条目
+        panel.find('#qrf_worldbook_entry_list_container .qrf_worldbook_entry_item:not(.filtered-out) input[type="checkbox"]').prop('checked', true);
         saveDisabledEntries();
     });
 
     panel.on('click.qrf', '#qrf_worldbook_entry_deselect_all', () => {
-        panel.find('#qrf_worldbook_entry_list_container input[type="checkbox"]').prop('checked', false);
+        // 只取消选择当前筛选结果中可见的条目
+        panel.find('#qrf_worldbook_entry_list_container .qrf_worldbook_entry_item:not(.filtered-out) input[type="checkbox"]').prop('checked', false);
         saveDisabledEntries();
+    });
+
+    // 世界书条目筛选功能
+    panel.on('input.qrf', '#qrf_worldbook_entry_filter', function() {
+        const filterText = $(this).val().toLowerCase().trim();
+        const container = panel.find('#qrf_worldbook_entry_list_container');
+        const allItems = container.find('.qrf_worldbook_entry_item');
+        let visibleCount = 0;
+        
+        if (filterText === '') {
+            // 清除筛选，显示所有条目
+            allItems.removeClass('filtered-out highlighted');
+            visibleCount = allItems.length;
+        } else {
+            allItems.each(function() {
+                const item = $(this);
+                const label = item.find('label').text().toLowerCase();
+                const bookName = item.data('book').toLowerCase();
+                
+                if (label.includes(filterText) || bookName.includes(filterText)) {
+                    item.removeClass('filtered-out').addClass('highlighted');
+                    visibleCount++;
+                } else {
+                    item.addClass('filtered-out').removeClass('highlighted');
+                }
+            });
+        }
+        
+        // 更新计数显示
+        const totalCount = allItems.length;
+        const countDisplay = panel.find('#qrf_worldbook_entry_count');
+        if (filterText === '') {
+            countDisplay.text(`显示 ${totalCount} / ${totalCount} 条目.`);
+        } else {
+            countDisplay.text(`筛选结果: ${visibleCount} / ${totalCount} 条目.`);
+        }
+    });
+
+    // 清除筛选按钮
+    panel.on('click.qrf', '#qrf_worldbook_entry_clear_filter', function() {
+        panel.find('#qrf_worldbook_entry_filter').val('').trigger('input');
     });
 }
