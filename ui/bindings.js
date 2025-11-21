@@ -1035,7 +1035,7 @@ export function initializeBindings() {
     modelSelect.empty().append(new Option('请选择一个模型', ''));
 
     if (models && models.length > 0) {
-      models.forEach(model => modelSelect.append(new Option(model.id || model.model, model.id || model.model)));
+      models.forEach(model => modelSelect.append(new Option(model, model)));
       if (currentApiSettings.model && modelSelect.find(`option[value="${currentApiSettings.model}"]`).length > 0) {
         modelSelect.val(currentApiSettings.model);
       }

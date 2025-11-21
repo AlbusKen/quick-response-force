@@ -49,24 +49,13 @@
             <label>API模式</label>
             <div class="qrf_radio_group qrf_api_mode_grid">
                 <div class="qrf_radio_option">
-                    <input type="radio" id="qrf_api_mode_frontend" name="qrf_api_mode" value="frontend" checked>
-                    <label for="qrf_api_mode_frontend">前端直连 (OpenAI兼容)</label>
-                </div>
-                <div class="qrf_radio_option">
-                    <input type="radio" id="qrf_api_mode_backend" name="qrf_api_mode" value="backend">
-                    <label for="qrf_api_mode_backend">后端代理 (OpenAI兼容)</label>
-                </div>
-                <div class="qrf_radio_option">
-                    <input type="radio" id="qrf_api_mode_google" name="qrf_api_mode" value="google">
-                    <label for="qrf_api_mode_google">Google AI Studio (前端)</label>
+                    <input type="radio" id="qrf_api_mode_custom" name="qrf_api_mode" value="custom" checked>
+                    <label for="qrf_api_mode_custom">自定义API</label>
                 </div>
                 <div class="qrf_radio_option">
                     <input type="radio" id="qrf_api_mode_tavern" name="qrf_api_mode" value="tavern">
                     <label for="qrf_api_mode_tavern">使用酒馆连接预设</label>
                 </div>
-            </div>
-            <div class="qrf_settings_block_hint" style="color: var(--text_secondary); margin-top: 5px; font-size: 0.8em;">
-                模式说明：除谷歌直连外优先使用前端，如果报错再尝试使用走后端代理，注意，如果你选择后端代理模式，你的酒馆主API就必须与此处填写的API相同（模型可以不同），不然就会报错。如果都不行，就使用“使用酒馆连接预设”模式，你将你需要的API和Key以及模型设置等单独保存为一个酒馆预设，然后在该模式下选取，这样在需要使用时会自动切换为该酒馆预设。
             </div>
         </div>
 
@@ -76,11 +65,22 @@
                 <select id="qrf_tavern_api_profile_select" class="text_pole"></select>
                 <button id="qrf_refresh_tavern_api_profiles" class="menu_button" title="刷新预设列表"><i class="fa-solid fa-sync"></i></button>
             </div>
-            <small class="notes">选择一个你在酒馆主设置中已经配置好的连接预设。插件将使用该预设的所有设置（包括模型参数）。</small>
+            <small class="notes">选择一个你在酒馆主设置中已经配置好的连接预设。</small>
         </div>
         
         <div id="qrf_custom_api_settings_block">
-            <div id="qrf_api_url_block" class="qrf_settings_block">
+            <div class="qrf_settings_block">
+                <label for="qrf_use_main_api"><strong>使用主API</strong></label>
+                <label class="toggle-switch">
+                    <input id="qrf_use_main_api" type="checkbox" />
+                    <span class="slider"></span>
+                </label>
+                <small class="notes">开启后，将直接使用SillyTavern当前的主API设置，无需下方额外配置。</small>
+            </div>
+            <div class="qrf_settings_block_hint" style="color: var(--text_secondary); margin-bottom: 10px; font-size: 0.8em;">
+                当“使用主API”关闭时，插件将使用以下自定义API（通过SillyTavern后端代理）。
+            </div>
+            <div class="qrf_settings_block">
             <label for="qrf_api_url">API URL</label>
             <input id="qrf_api_url" type="text" class="text_pole" placeholder="例如: https://api.openai.com/v1" />
         </div>

@@ -253,7 +253,7 @@ async function runOptimizationLogic(userMessage) {
 
     let worldbookContent = '';
     if (apiSettings.worldbookEnabled) {
-      worldbookContent = await getCombinedWorldbookContent(context, apiSettings);
+      worldbookContent = await getCombinedWorldbookContent(context, apiSettings, userMessage);
     }
 
     // [架构重构] 读取上一轮优化结果，用于$6占位符
