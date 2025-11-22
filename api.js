@@ -89,14 +89,46 @@ export async function callInterceptionApi(
   let result;
   try {
     if (apiSettings.apiMode === 'tavern') {
-      // 模式A: 酒馆预设模式
       const profileId = apiSettings.tavernProfile;
       if (!profileId) {
         throw new Error('未选择酒馆连接预设。');
       }
-      console.log(`[${extensionName}] 通过酒馆连接预设发送请求...`);
-      const context = getContext();
-      result = await context.ConnectionManagerRequestService.sendRequest(profileId, messages, apiSettings.maxTokens);
+
+      let originalProfile = '';
+      let responsePromise;
+      try {
+        originalProfile = await window.TavernHelper.triggerSlash('/profile');
+        const context = getContext();
+        const targetProfile = context.extensionSettings?.connectionManager?.profiles?.find(p => p.id === profileId);
+
+        if (!targetProfile) {
+          throw new Error(`无法找到ID为 "${profileId}" 的连接预设。`);
+        }
+
+        const targetProfileName = targetProfile.name;
+        const currentProfile = await window.TavernHelper.triggerSlash('/profile');
+
+        if (currentProfile !== targetProfileName) {
+          const escapedProfileName = targetProfileName.replace(/"/g, '\\"');
+          await window.TavernHelper.triggerSlash(`/profile await=true "${escapedProfileName}"`);
+        }
+
+        console.log(`[${extensionName}] 通过酒馆连接预设 "${targetProfileName}" 发送请求...`);
+        responsePromise = context.ConnectionManagerRequestService.sendRequest(
+          profileId,
+          messages,
+          apiSettings.maxTokens,
+        );
+      } finally {
+        // 无论成功或失败，都切换回原始预设
+        const currentProfileAfterCall = await window.TavernHelper.triggerSlash('/profile');
+        if (originalProfile && originalProfile !== currentProfileAfterCall) {
+          const escapedOriginalProfile = originalProfile.replace(/"/g, '\\"');
+          await window.TavernHelper.triggerSlash(`/profile await=true "${escapedOriginalProfile}"`);
+          console.log(`[${extensionName}] 已恢复原酒馆连接预设: "${originalProfile}"`);
+        }
+      }
+      result = await responsePromise;
     } else {
       // 模式B: 自定义API模式 (包含 useMainApi 逻辑)
       if (apiSettings.useMainApi) {
@@ -223,13 +255,31 @@ export async function testApiConnection(apiSettings) {
       if (!tavernProfile) {
         throw new Error('请选择一个酒馆连接预设用于测试。');
       }
-      const context = getContext();
-      const profile = context.extensionSettings?.connectionManager?.profiles.find(p => p.id === tavernProfile);
-      if (!profile) {
-        throw new Error(`无法找到ID为 "${tavernProfile}" 的连接预设。`);
+      let originalProfile = '';
+      try {
+        originalProfile = await window.TavernHelper.triggerSlash('/profile');
+        const context = getContext();
+        const profile = context.extensionSettings?.connectionManager?.profiles?.find(p => p.id === tavernProfile);
+        if (!profile) {
+          throw new Error(`无法找到ID为 "${tavernProfile}" 的连接预设。`);
+        }
+        const targetProfileName = profile.name;
+        const currentProfile = await window.TavernHelper.triggerSlash('/profile');
+        if (currentProfile !== targetProfileName) {
+          const escapedProfileName = targetProfileName.replace(/"/g, '\\"');
+          await window.TavernHelper.triggerSlash(`/profile await=true "${escapedProfileName}"`);
+        }
+        // 切换成功即可认为连接正常
+        toastr.success(`测试成功！已成功切换到预设 "${profile.name}"。`, 'API连接正常');
+        return true;
+      } finally {
+        const currentProfileAfterCall = await window.TavernHelper.triggerSlash('/profile');
+        if (originalProfile && originalProfile !== currentProfileAfterCall) {
+          const escapedOriginalProfile = originalProfile.replace(/"/g, '\\"');
+          await window.TavernHelper.triggerSlash(`/profile await=true "${escapedOriginalProfile}"`);
+          console.log(`[${extensionName}] 已恢复原酒馆连接预设: "${originalProfile}"`);
+        }
       }
-      toastr.success(`测试成功！将使用预设 "${profile.name}"。`, 'API连接正常');
-      return true;
     } else {
       // custom mode
       if (useMainApi) {
