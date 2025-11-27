@@ -57,15 +57,29 @@ export async function getCombinedWorldbookContent(context, apiSettings, userMess
     }
 
     // 3. 过滤掉在SillyTavern中被禁用的条目，以及用户在插件UI中取消勾选的条目
-    const enabledEntriesFromSettings = apiSettings.enabledWorldbookEntries || {};
+    const disabledEntriesFromSettings = apiSettings.disabledWorldbookEntries;
+
+    // 如果设置为 "__ALL_SELECTED__"，则意味着所有条目都被启用（除了在ST本身被禁用的）
+    const isAllSelected = disabledEntriesFromSettings === '__ALL_SELECTED__';
+    const disabledMap =
+      typeof disabledEntriesFromSettings === 'object' && disabledEntriesFromSettings !== null
+        ? disabledEntriesFromSettings
+        : {};
+
     const userEnabledEntries = allEntries.filter(entry => {
+      // 1. 必须在SillyTavern本身是启用的
       if (!entry.enabled) return false;
-      const bookConfig = enabledEntriesFromSettings[entry.bookName];
-      // 如果一个书在设置里有记录，则只包括明确勾选的条目
-      if (bookConfig) {
-        return bookConfig.includes(entry.uid);
+
+      // 2. 如果是全选状态，则通过
+      if (isAllSelected) return true;
+
+      // 3. 检查是否在禁用列表中
+      const disabledInBook = disabledMap[entry.bookName];
+      if (disabledInBook && Array.isArray(disabledInBook) && disabledInBook.includes(entry.uid)) {
+        return false;
       }
-      // 如果没有记录（例如新添加的书），默认所有条目都是启用的
+
+      // 默认为启用
       return true;
     });
 

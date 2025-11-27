@@ -304,7 +304,7 @@ export async function testApiConnection(apiSettings) {
       const testMessages = [{ role: 'user', content: 'Say "Hi"' }];
       const requestBody = {
         messages: testMessages,
-        model: model,
+        model: model.replace(/^models\//, ''),
         max_tokens: 5,
         temperature: 0.1,
         stream: false,
