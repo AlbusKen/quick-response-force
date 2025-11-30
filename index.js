@@ -95,30 +95,20 @@ async function loadPresetAndCleanCharacterData() {
       if (presetToLoad.prompts && Array.isArray(presetToLoad.prompts)) {
         newApiSettings.prompts = JSON.parse(JSON.stringify(presetToLoad.prompts));
       } else {
-        // 旧格式预设迁移到新格式
-        newApiSettings.prompts = [
-          {
-            id: 'mainPrompt',
-            name: '主系统提示词 (通用)',
-            role: 'system',
-            content: presetToLoad.mainPrompt || '',
-            deletable: false,
-          },
-          {
-            id: 'systemPrompt',
-            name: '拦截任务详细指令',
-            role: 'user',
-            content: presetToLoad.systemPrompt || '',
-            deletable: false,
-          },
-          {
-            id: 'finalSystemDirective',
-            name: '最终注入指令 (Storyteller Directive)',
-            role: 'system',
-            content: presetToLoad.finalSystemDirective || '',
-            deletable: false,
-          },
-        ];
+        // [新功能] 旧预设兼容：使用默认的新提示词组，并仅覆盖三个基础提示词的内容
+        newApiSettings.prompts = JSON.parse(JSON.stringify(defaultSettings.apiSettings.prompts));
+
+        const legacyContentMap = {
+          mainPrompt: presetToLoad.mainPrompt,
+          systemPrompt: presetToLoad.systemPrompt,
+          finalSystemDirective: presetToLoad.finalSystemDirective,
+        };
+
+        newApiSettings.prompts.forEach(p => {
+          if (legacyContentMap[p.id] !== undefined) {
+            p.content = legacyContentMap[p.id] || '';
+          }
+        });
       }
 
       Object.assign(settings.apiSettings, newApiSettings);
@@ -213,7 +203,7 @@ async function savePlotToLatestMessage() {
         // SillyTavern should handle saving automatically after generation ends.
       }
     }
-    // 无论成功与否，都清空临时变量，避免污染下一次生成
+    // 无论成功或失败，都清空临时变量，避免污染下一次生成
     tempPlotToSave = null;
   }
 }
@@ -266,29 +256,20 @@ async function runOptimizationLogic(userMessage) {
         if (presetToApply.prompts && Array.isArray(presetToApply.prompts)) {
           presetPrompts = JSON.parse(JSON.stringify(presetToApply.prompts));
         } else {
-          presetPrompts = [
-            {
-              id: 'mainPrompt',
-              name: '主系统提示词 (通用)',
-              role: 'system',
-              content: presetToApply.mainPrompt || '',
-              deletable: false,
-            },
-            {
-              id: 'systemPrompt',
-              name: '拦截任务详细指令',
-              role: 'user',
-              content: presetToApply.systemPrompt || '',
-              deletable: false,
-            },
-            {
-              id: 'finalSystemDirective',
-              name: '最终注入指令 (Storyteller Directive)',
-              role: 'system',
-              content: presetToApply.finalSystemDirective || '',
-              deletable: false,
-            },
-          ];
+          // [新功能] 旧预设兼容：使用默认的新提示词组，并仅覆盖三个基础提示词的内容
+          presetPrompts = JSON.parse(JSON.stringify(defaultSettings.apiSettings.prompts));
+
+          const legacyContentMap = {
+            mainPrompt: presetToApply.mainPrompt,
+            systemPrompt: presetToApply.systemPrompt,
+            finalSystemDirective: presetToApply.finalSystemDirective,
+          };
+
+          presetPrompts.forEach(p => {
+            if (legacyContentMap[p.id] !== undefined) {
+              p.content = legacyContentMap[p.id] || '';
+            }
+          });
         }
 
         apiSettings = {
