@@ -686,6 +686,7 @@ function saveAsNewPreset(panel) {
     rateCuckold: parseFloat(panel.find('#qrf_rate_cuckold').val()),
     // [新功能] 导出时包含新增的设置
     extractTags: panel.find('#qrf_extract_tags').val(),
+    extractTagsFromInput: panel.find('#qrf_extract_tags_from_input').val(),
     minLength: parseInt(panel.find('#qrf_min_length').val(), 10),
     contextTurnCount: parseInt(panel.find('#qrf_context_turn_count').val(), 10),
   };
@@ -748,6 +749,7 @@ function overwriteSelectedPreset(panel) {
     rateCuckold: parseFloat(panel.find('#qrf_rate_cuckold').val()),
     // [新功能] 覆盖时包含新增的设置
     extractTags: panel.find('#qrf_extract_tags').val(),
+    extractTagsFromInput: panel.find('#qrf_extract_tags_from_input').val(),
     minLength: parseInt(panel.find('#qrf_min_length').val(), 10),
     contextTurnCount: parseInt(panel.find('#qrf_context_turn_count').val(), 10),
   };
@@ -859,30 +861,20 @@ function importPromptPresets(file, panel) {
           if (preset.prompts && Array.isArray(preset.prompts)) {
               importedPrompts = preset.prompts;
           } else {
-              // 旧格式迁移
-              importedPrompts = [
-                  {
-                    id: 'mainPrompt',
-                    name: '主系统提示词 (通用)',
-                    role: 'system',
-                    content: preset.mainPrompt || '',
-                    deletable: false,
-                  },
-                  {
-                    id: 'systemPrompt',
-                    name: '拦截任务详细指令',
-                    role: 'user',
-                    content: preset.systemPrompt || '',
-                    deletable: false,
-                  },
-                  {
-                    id: 'finalSystemDirective',
-                    name: '最终注入指令 (Storyteller Directive)',
-                    role: 'system',
-                    content: preset.finalSystemDirective || '',
-                    deletable: false,
-                  },
-              ];
+              // [新功能] 旧预设兼容：使用默认的新提示词组，并仅覆盖三个基础提示词的内容
+              importedPrompts = JSON.parse(JSON.stringify(defaultSettings.apiSettings.prompts));
+              
+              const legacyContentMap = {
+                  'mainPrompt': preset.mainPrompt,
+                  'systemPrompt': preset.systemPrompt,
+                  'finalSystemDirective': preset.finalSystemDirective
+              };
+
+              importedPrompts.forEach(p => {
+                  if (legacyContentMap[p.id] !== undefined) {
+                      p.content = legacyContentMap[p.id] || '';
+                  }
+              });
           }
 
           const presetData = {
@@ -985,6 +977,7 @@ function loadSettings(panel) {
 
   // 加载标签摘取设置
   panel.find('#qrf_extract_tags').val(apiSettings.extractTags || '');
+  panel.find('#qrf_extract_tags_from_input').val(apiSettings.extractTagsFromInput || '');
 
   // 加载匹配替换速率
   panel.find('#qrf_rate_main').val(apiSettings.rateMain);
@@ -1298,30 +1291,20 @@ export function initializeBindings() {
       if (selectedPreset.prompts && Array.isArray(selectedPreset.prompts)) {
           presetPrompts = selectedPreset.prompts;
       } else {
-           // 旧预设兼容
-           presetPrompts = [
-                {
-                    id: 'mainPrompt',
-                    name: '主系统提示词 (通用)',
-                    role: 'system',
-                    content: selectedPreset.mainPrompt || '',
-                    deletable: false,
-                },
-                {
-                    id: 'systemPrompt',
-                    name: '拦截任务详细指令',
-                    role: 'user',
-                    content: selectedPreset.systemPrompt || '',
-                    deletable: false,
-                },
-                {
-                    id: 'finalSystemDirective',
-                    name: '最终注入指令 (Storyteller Directive)',
-                    role: 'system',
-                    content: selectedPreset.finalSystemDirective || '',
-                    deletable: false,
-                },
-            ];
+           // [新功能] 旧预设兼容：使用默认的新提示词组，并仅覆盖三个基础提示词的内容
+           presetPrompts = JSON.parse(JSON.stringify(defaultSettings.apiSettings.prompts));
+           
+           const legacyContentMap = {
+               'mainPrompt': selectedPreset.mainPrompt,
+               'systemPrompt': selectedPreset.systemPrompt,
+               'finalSystemDirective': selectedPreset.finalSystemDirective
+           };
+
+           presetPrompts.forEach(p => {
+               if (legacyContentMap[p.id] !== undefined) {
+                   p.content = legacyContentMap[p.id] || '';
+               }
+           });
       }
 
       const presetData = {
@@ -1332,6 +1315,7 @@ export function initializeBindings() {
         rateCuckold: selectedPreset.rateCuckold ?? 1.0,
         // [新功能] 加载预设时应用新设置
         extractTags: selectedPreset.extractTags || '',
+        extractTagsFromInput: selectedPreset.extractTagsFromInput || '',
         minLength: selectedPreset.minLength ?? defaultSettings.minLength,
         contextTurnCount: selectedPreset.contextTurnCount ?? defaultSettings.apiSettings.contextTurnCount,
       };
@@ -1343,6 +1327,7 @@ export function initializeBindings() {
       panel.find('#qrf_rate_erotic').val(presetData.rateErotic);
       panel.find('#qrf_rate_cuckold').val(presetData.rateCuckold);
       panel.find('#qrf_extract_tags').val(presetData.extractTags);
+      panel.find('#qrf_extract_tags_from_input').val(presetData.extractTagsFromInput);
       panel.find('#qrf_min_length').val(presetData.minLength);
       panel.find('#qrf_context_turn_count').val(presetData.contextTurnCount);
 
@@ -1459,5 +1444,3 @@ export function initializeBindings() {
     panel.find('#qrf_worldbook_entry_filter').val('').trigger('input');
   });
 }
-
-
