@@ -40,51 +40,9 @@ function normalizeApiResponse(responseData) {
 /**
  * 主API调用入口，根据设置选择不同的模式
  */
-export async function callInterceptionApi(
-  userMessage,
-  contextMessages,
-  apiSettings,
-  worldbookContent,
-  tableDataContent,
-) {
-  const replacePlaceholders = text => {
-    if (typeof text !== 'string') return '';
-    const worldbookReplacement =
-      apiSettings.worldbookEnabled && worldbookContent
-        ? `\n<worldbook_context>\n${worldbookContent}\n</worldbook_context>\n`
-        : '';
-    text = text.replace(/(?<!\\)\$1/g, worldbookReplacement);
-    const tableDataReplacement = tableDataContent
-      ? `\n<table_data_context>\n${tableDataContent}\n</table_data_context>\n`
-      : '';
-    text = text.replace(/(?<!\\)\$5/g, tableDataReplacement);
-    return text;
-  };
-
-  const messages = [];
-  if (apiSettings.mainPrompt) {
-    messages.push({ role: 'system', content: replacePlaceholders(apiSettings.mainPrompt) });
-  }
-
-  const fullHistory = Array.isArray(contextMessages) ? [...contextMessages] : [];
-  if (userMessage) {
-    fullHistory.push({ role: 'user', content: userMessage });
-  }
-
-  const sanitizeHtml = htmlString => {
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = htmlString;
-    return tempDiv.textContent || tempDiv.innerText || '';
-  };
-
-  const formattedHistory = fullHistory.map(msg => `${msg.role}："${sanitizeHtml(msg.content)}"`).join(' \n ');
-  if (formattedHistory) {
-    messages.push({ role: 'system', content: `以下是前文的用户记录和故事发展，给你用作参考：\n ${formattedHistory}` });
-  }
-
-  if (apiSettings.systemPrompt) {
-    messages.push({ role: 'user', content: replacePlaceholders(apiSettings.systemPrompt) });
-  }
+export async function callInterceptionApi(messages, apiSettings) {
+  // messages 已经在 index.js 中构建完成，直接使用
+  // apiSettings 包含API连接配置
 
   let result;
   try {

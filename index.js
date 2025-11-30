@@ -82,15 +82,46 @@ async function loadPresetAndCleanCharacterData() {
       console.log(`[${extension_name}] Applying last used preset: "${lastUsedPresetName}"`);
 
       // 步骤1: 将预设内容加载到全局设置中
-      Object.assign(settings.apiSettings, {
-        mainPrompt: presetToLoad.mainPrompt,
-        systemPrompt: presetToLoad.systemPrompt,
-        finalSystemDirective: presetToLoad.finalSystemDirective,
-        rateMain: presetToLoad.rateMain,
-        ratePersonal: presetToLoad.ratePersonal,
-        rateErotic: presetToLoad.rateErotic,
-        rateCuckold: presetToLoad.rateCuckold,
-      });
+      // [架构重构] 支持新旧格式预设
+      const newApiSettings = {};
+
+      // 迁移基本速率设置
+      if (presetToLoad.rateMain !== undefined) newApiSettings.rateMain = presetToLoad.rateMain;
+      if (presetToLoad.ratePersonal !== undefined) newApiSettings.ratePersonal = presetToLoad.ratePersonal;
+      if (presetToLoad.rateErotic !== undefined) newApiSettings.rateErotic = presetToLoad.rateErotic;
+      if (presetToLoad.rateCuckold !== undefined) newApiSettings.rateCuckold = presetToLoad.rateCuckold;
+
+      // 迁移提示词
+      if (presetToLoad.prompts && Array.isArray(presetToLoad.prompts)) {
+        newApiSettings.prompts = JSON.parse(JSON.stringify(presetToLoad.prompts));
+      } else {
+        // 旧格式预设迁移到新格式
+        newApiSettings.prompts = [
+          {
+            id: 'mainPrompt',
+            name: '主系统提示词 (通用)',
+            role: 'system',
+            content: presetToLoad.mainPrompt || '',
+            deletable: false,
+          },
+          {
+            id: 'systemPrompt',
+            name: '拦截任务详细指令',
+            role: 'user',
+            content: presetToLoad.systemPrompt || '',
+            deletable: false,
+          },
+          {
+            id: 'finalSystemDirective',
+            name: '最终注入指令 (Storyteller Directive)',
+            role: 'system',
+            content: presetToLoad.finalSystemDirective || '',
+            deletable: false,
+          },
+        ];
+      }
+
+      Object.assign(settings.apiSettings, newApiSettings);
 
       // 步骤2: 清除当前角色卡上的陈旧提示词数据
       const character = characters[this_chid];
@@ -100,6 +131,7 @@ async function loadPresetAndCleanCharacterData() {
           'mainPrompt',
           'systemPrompt',
           'finalSystemDirective',
+          'prompts', // 清除角色卡上的 prompts，优先使用全局/预设
           'rateMain',
           'ratePersonal',
           'rateErotic',
@@ -199,13 +231,16 @@ async function runOptimizationLogic(userMessage) {
   try {
     // 在每次执行前，都重新进行一次深度合并，以获取最新、最完整的设置状态
     const currentSettings = extension_settings[extension_name] || {};
+    // 确保 prompts 数组存在
+    const baseApiSettings = { ...defaultSettings.apiSettings, ...currentSettings.apiSettings };
+    if (!baseApiSettings.prompts || baseApiSettings.prompts.length === 0) {
+      baseApiSettings.prompts = JSON.parse(JSON.stringify(defaultSettings.apiSettings.prompts));
+    }
+
     const settings = {
       ...defaultSettings,
       ...currentSettings,
-      apiSettings: {
-        ...defaultSettings.apiSettings,
-        ...(currentSettings.apiSettings || {}),
-      },
+      apiSettings: baseApiSettings,
     };
 
     if (!settings.enabled || (settings.apiSettings.apiMode !== 'tavern' && !settings.apiSettings.apiUrl)) {
@@ -226,11 +261,39 @@ async function runOptimizationLogic(userMessage) {
       const presetToApply = presets.find(p => p.name === lastUsedPresetName);
       if (presetToApply) {
         console.log(`[${extension_name}] Active preset "${lastUsedPresetName}" found. Forcing prompt override.`);
+        // 处理预设数据迁移
+        let presetPrompts = [];
+        if (presetToApply.prompts && Array.isArray(presetToApply.prompts)) {
+          presetPrompts = JSON.parse(JSON.stringify(presetToApply.prompts));
+        } else {
+          presetPrompts = [
+            {
+              id: 'mainPrompt',
+              name: '主系统提示词 (通用)',
+              role: 'system',
+              content: presetToApply.mainPrompt || '',
+              deletable: false,
+            },
+            {
+              id: 'systemPrompt',
+              name: '拦截任务详细指令',
+              role: 'user',
+              content: presetToApply.systemPrompt || '',
+              deletable: false,
+            },
+            {
+              id: 'finalSystemDirective',
+              name: '最终注入指令 (Storyteller Directive)',
+              role: 'system',
+              content: presetToApply.finalSystemDirective || '',
+              deletable: false,
+            },
+          ];
+        }
+
         apiSettings = {
           ...apiSettings,
-          mainPrompt: presetToApply.mainPrompt,
-          systemPrompt: presetToApply.systemPrompt,
-          finalSystemDirective: presetToApply.finalSystemDirective,
+          prompts: presetPrompts,
           rateMain: presetToApply.rateMain,
           ratePersonal: presetToApply.ratePersonal,
           rateErotic: presetToApply.rateErotic,
@@ -281,22 +344,77 @@ async function runOptimizationLogic(userMessage) {
       $6: lastPlotContent, // [新增] 添加$6占位符及其内容
     };
 
-    const processedPrompts = {
-      mainPrompt: apiSettings.mainPrompt,
-      systemPrompt: apiSettings.systemPrompt,
-      finalSystemDirective: apiSettings.finalSystemDirective,
+    // 辅助函数：替换文本中的占位符
+    const performReplacements = text => {
+      if (!text) return '';
+      let processed = text;
+
+      // 替换 $1 (Worldbook)
+      const worldbookReplacement =
+        apiSettings.worldbookEnabled && worldbookContent
+          ? `\n<worldbook_context>\n${worldbookContent}\n</worldbook_context>\n`
+          : '';
+      processed = processed.replace(/(?<!\\)\$1/g, worldbookReplacement);
+
+      // 替换其他
+      for (const key in replacements) {
+        const value = replacements[key];
+        const regex = new RegExp(escapeRegExp(key), 'g');
+        processed = processed.replace(regex, value);
+      }
+      return processed;
     };
 
-    for (const key in replacements) {
-      const value = replacements[key];
-      // [修复] 使用 escapeRegExp 来安全地处理像 $ 这样的特殊字符
-      const regex = new RegExp(escapeRegExp(key), 'g');
-      processedPrompts.mainPrompt = processedPrompts.mainPrompt.replace(regex, value);
-      processedPrompts.systemPrompt = processedPrompts.systemPrompt.replace(regex, value);
-      processedPrompts.finalSystemDirective = processedPrompts.finalSystemDirective.replace(regex, value);
+    // 构建 API 消息列表
+    const messages = [];
+    let finalSystemDirectiveContent =
+      '[SYSTEM_DIRECTIVE: You are a storyteller. The following <plot> block is your absolute script for this turn. You MUST follow the <directive> within it to generate the story.]';
+
+    // 格式化历史记录用于注入
+    const sanitizeHtml = htmlString => {
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = htmlString;
+      return tempDiv.textContent || tempDiv.innerText || '';
+    };
+
+    let fullHistory = [];
+    if (slicedContext && Array.isArray(slicedContext)) {
+      fullHistory = [...slicedContext];
+    }
+    if (userMessage) {
+      fullHistory.push({ role: 'user', content: userMessage });
+    }
+    const formattedHistory = fullHistory.map(msg => `${msg.role}："${sanitizeHtml(msg.content)}"`).join(' \n ');
+
+    const prompts = apiSettings.prompts || [];
+
+    // 遍历提示词列表构建消息
+    for (const prompt of prompts) {
+      const processedContent = performReplacements(prompt.content);
+
+      // 特殊处理: finalSystemDirective 仅用于提取，不发送给API
+      if (prompt.id === 'finalSystemDirective') {
+        finalSystemDirectiveContent = processedContent;
+        continue;
+      }
+
+      // 特殊处理: 在 systemPrompt (Prompt 2) 之前注入上下文
+      // 只有当 id 明确匹配 'systemPrompt' 时才注入。如果用户删除了它（虽然UI禁止），则不注入？
+      // 用户要求: "上下文读取位置也固定在提示词2的上方不变"
+      if (prompt.id === 'systemPrompt' && formattedHistory) {
+        messages.push({
+          role: 'system',
+          content: `以下是前文的用户记录和故事发展，给你用作参考：\n ${formattedHistory}`,
+        });
+      }
+
+      messages.push({
+        role: prompt.role || 'system', // 默认为 system
+        content: processedContent,
+      });
     }
 
-    const finalApiSettings = { ...apiSettings, ...processedPrompts };
+    const finalApiSettings = { ...apiSettings, extractTags: apiSettings.extractTags };
     const minLength = settings.minLength || 0;
     let processedMessage = null;
     const maxRetries = 3;
@@ -304,13 +422,8 @@ async function runOptimizationLogic(userMessage) {
     if (minLength > 0) {
       for (let i = 0; i < maxRetries; i++) {
         $toast.find('.toastr-message').text(`正在规划剧情... (尝试 ${i + 1}/${maxRetries})`);
-        const tempMessage = await callInterceptionApi(
-          userMessage,
-          slicedContext,
-          finalApiSettings,
-          worldbookContent,
-          tableDataContent,
-        );
+        // 直接传递构建好的 messages 数组
+        const tempMessage = await callInterceptionApi(messages, finalApiSettings);
         if (tempMessage && tempMessage.length >= minLength) {
           processedMessage = tempMessage;
           if ($toast) toastr.clear($toast);
@@ -323,13 +436,7 @@ async function runOptimizationLogic(userMessage) {
         }
       }
     } else {
-      processedMessage = await callInterceptionApi(
-        userMessage,
-        slicedContext,
-        finalApiSettings,
-        worldbookContent,
-        tableDataContent,
-      );
+      processedMessage = await callInterceptionApi(messages, finalApiSettings);
     }
 
     if (processedMessage) {
@@ -368,11 +475,8 @@ async function runOptimizationLogic(userMessage) {
         }
       }
 
-      const finalSystemDirective =
-        finalApiSettings.finalSystemDirective ||
-        '[SYSTEM_DIRECTIVE: You are a storyteller. The following <plot> block is your absolute script for this turn. You MUST follow the <directive> within it to generate the story.]';
       // 使用可能被处理过的 messageForTavern 构建最终消息
-      const finalMessage = `${userMessage}\n\n${finalSystemDirective}\n${messageForTavern}`;
+      const finalMessage = `${userMessage}\n\n${finalSystemDirectiveContent}\n${messageForTavern}`;
 
       if ($toast) toastr.clear($toast);
       if (minLength <= 0) {
@@ -501,6 +605,44 @@ jQuery(async () => {
     if (settings.apiSettings[key] === undefined) {
       settings.apiSettings[key] = defaultApiSettings[key];
     }
+  }
+
+  // [新功能] 迁移旧设置到新的 prompts 数组
+  if (!settings.apiSettings.prompts || settings.apiSettings.prompts.length === 0) {
+    console.log(`[${extension_name}] Migrating legacy prompts to new format...`);
+    // 检查旧设置是否存在
+    const oldMain = settings.apiSettings.mainPrompt;
+
+    // 如果连 mainPrompt 都没有，就使用默认值
+    if (!oldMain) {
+      settings.apiSettings.prompts = JSON.parse(JSON.stringify(defaultSettings.apiSettings.prompts));
+    } else {
+      // 使用现有设置构建
+      settings.apiSettings.prompts = [
+        {
+          id: 'mainPrompt',
+          name: '主系统提示词 (通用)',
+          role: 'system',
+          content: settings.apiSettings.mainPrompt || '',
+          deletable: false,
+        },
+        {
+          id: 'systemPrompt',
+          name: '拦截任务详细指令',
+          role: 'user',
+          content: settings.apiSettings.systemPrompt || '',
+          deletable: false,
+        },
+        {
+          id: 'finalSystemDirective',
+          name: '最终注入指令 (Storyteller Directive)',
+          role: 'system',
+          content: settings.apiSettings.finalSystemDirective || '',
+          deletable: false,
+        },
+      ];
+    }
+    saveSettings();
   }
 
   // 确保新增的顶层设置有默认值

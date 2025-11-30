@@ -7,6 +7,8 @@
     line-height: 1.6;
     font-size: 14px;
     letter-spacing: 0.01em;
+    box-sizing: border-box;
+    width: 100%;
 }
 
 /* 2. 滚动条美化 */
@@ -78,12 +80,14 @@
     background: linear-gradient(135deg, var(--background-color-secondary, rgba(40, 40, 40, 0.9)), var(--background-color-secondary, rgba(50, 50, 50, 0.9)));
     border: 1px solid var(--border-color, #3a3a3a);
     padding: 20px 25px;
-    margin-bottom: 25px;
+    margin: 0 0 25px 0;
     border-radius: 12px;
     transition: all 0.3s ease;
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
     position: relative;
     overflow: hidden;
+    box-sizing: border-box;
+    width: auto;
 }
 
 #qrf_settings_panel .settings-group::before {
@@ -185,6 +189,7 @@
     display: flex;
     gap: 8px;
     align-items: center;
+    flex-wrap: wrap;
 }
 
 #qrf_settings_panel .qrf_model_selector_wrapper input,
@@ -564,4 +569,107 @@
 /* 17. 密码输入框优化 */
 #qrf_settings_panel input[type="password"] {
     letter-spacing: 0.05em;
+}
+
+/* 18. 动态提示词列表 */
+.qrf_prompts_list {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    margin-bottom: 15px;
+}
+
+.qrf_prompt_segment {
+    background: var(--background-color-tertiary, rgba(0,0,0,0.1));
+    border: 1px solid var(--border-color, #444);
+    border-radius: 8px;
+    padding: 15px;
+    transition: all 0.3s ease;
+    box-sizing: border-box;
+    width: auto;
+}
+
+.qrf_prompt_segment:hover {
+    border-color: var(--primary, #00BFFF);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.qrf_prompt_header {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.qrf_prompt_header .qrf_prompt_name {
+    flex: 2;
+    min-width: 150px;
+}
+
+.qrf_prompt_header .qrf_prompt_role {
+    flex: 1;
+    min-width: 100px;
+}
+
+.qrf_prompt_controls {
+    display: flex;
+    gap: 5px;
+}
+
+.qrf_prompt_controls .menu_button {
+    min-width: 32px;
+    width: 32px;
+    padding: 0;
+    height: 32px;
+}
+
+/* Up/Down buttons style override */
+.qrf_prompt_controls .qrf_prompt_up_btn,
+.qrf_prompt_controls .qrf_prompt_down_btn {
+    background: var(--background-color, #333);
+    color: var(--text_secondary, #ccc);
+    box-shadow: none;
+    border: 1px solid var(--border-color, #555);
+}
+
+.qrf_prompt_controls .qrf_prompt_up_btn:hover:not(:disabled),
+.qrf_prompt_controls .qrf_prompt_down_btn:hover:not(:disabled) {
+    background: var(--background-color-hover, #444);
+    color: var(--text_color, #fff);
+}
+
+.qrf_prompt_controls .qrf_prompt_delete_btn {
+    background: linear-gradient(135deg, #dc3545, #c82333);
+}
+
+.qrf_prompt_controls .qrf_prompt_delete_btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, #c82333, #bd2130);
+}
+
+.qrf_prompt_controls .menu_button:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+/* 19. 特殊提示词 (指令) 样式 */
+.qrf_special_prompt_directive {
+    background: linear-gradient(135deg, rgba(255, 152, 0, 0.1), rgba(255, 193, 7, 0.1));
+    border-color: rgba(255, 152, 0, 0.5);
+    box-shadow: 0 0 10px rgba(255, 152, 0, 0.1);
+}
+
+.qrf_special_prompt_directive:hover {
+    border-color: #ff9800;
+    box-shadow: 0 0 15px rgba(255, 152, 0, 0.2);
+}
+
+.qrf_special_prompt_directive .qrf_prompt_role {
+    opacity: 0.7;
+}
+
+.qrf_prompt_note {
+    padding-top: 8px;
+    border-top: 1px dashed rgba(255, 152, 0, 0.3);
+    margin-top: 10px;
 }

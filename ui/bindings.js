@@ -34,6 +34,9 @@ export async function saveAllSettings() {
 
   // 确保世界书条目也被保存
   await saveDisabledEntries();
+  
+  // 确保提示词列表被保存 (虽然它们会在change时自动保存)
+  await savePrompts();
 
   toastr.info('设置已自动保存。');
 }
@@ -259,6 +262,17 @@ function getMergedApiSettings() {
       mergedSettings[key] = characterSettings[key];
     }
   });
+  
+  // 确保 prompts 存在
+  if (!mergedSettings.prompts || mergedSettings.prompts.length === 0) {
+      // 尝试使用 globalSettings (如果 characterSettings 覆盖了 prompts 但为空)
+      if (globalSettings.prompts && globalSettings.prompts.length > 0) {
+          mergedSettings.prompts = globalSettings.prompts;
+      } else {
+          // 最后的 fallback
+          mergedSettings.prompts = JSON.parse(JSON.stringify(defaultSettings.apiSettings.prompts));
+      }
+  }
 
   return mergedSettings;
 }
@@ -287,6 +301,7 @@ async function clearCharacterStaleSettings(type) {
       'mainPrompt',
       'systemPrompt',
       'finalSystemDirective',
+      'prompts',
       'rateMain',
       'ratePersonal',
       'rateErotic',
@@ -357,7 +372,8 @@ async function loadWorldbooks(panel) {
   }
 }
 
-async function loadWorldbookEntries(panel) {
+// 导出 loadWorldbookEntries 供 drawer.js 动态导入使用
+export async function loadWorldbookEntries(panel) {
   const container = panel.find('#qrf_worldbook_entry_list_container');
   const countDisplay = panel.find('#qrf_worldbook_entry_count');
   container.html('<p>加载条目中...</p>');
@@ -543,6 +559,84 @@ async function saveDisabledEntries() {
   console.log(`[${extensionName}] 已保存禁用条目状态：`, disabledEntries);
 }
 
+// ---- 提示词 UI 逻辑 ----
+
+/**
+ * 从 UI 中读取提示词列表
+ */
+function getPromptsFromUI() {
+    const prompts = [];
+    $('#qrf_prompts_container .qrf_prompt_segment').each(function() {
+        const el = $(this);
+        prompts.push({
+            id: el.data('id'),
+            role: el.find('.qrf_prompt_role').val(),
+            content: el.find('.qrf_prompt_content').val(),
+            name: el.find('.qrf_prompt_name').val(),
+            deletable: el.data('deletable') !== false
+        });
+    });
+    return prompts;
+}
+
+/**
+ * 保存提示词列表
+ */
+async function savePrompts() {
+    const prompts = getPromptsFromUI();
+    await saveSetting('prompts', prompts);
+}
+
+/**
+ * 渲染提示词列表到 UI
+ * @param {JQuery} panel 
+ * @param {Array} prompts 
+ */
+function renderPrompts(panel, prompts) {
+    const container = panel.find('#qrf_prompts_container');
+    container.empty();
+
+    prompts.forEach((prompt, index) => {
+        const isDeletable = prompt.deletable !== false;
+        const isFinalDirective = prompt.id === 'finalSystemDirective';
+        
+        let extraClass = '';
+        let roleDisabled = '';
+        let extraNote = '';
+
+        if (isFinalDirective) {
+            extraClass = 'qrf_special_prompt_directive';
+            roleDisabled = 'disabled style="visibility: hidden;"'; // 隐藏角色选择
+            extraNote = '<div class="qrf_prompt_note" style="color: #ff9800; font-size: 0.8em; margin-top: 5px;"><i class="fa-solid fa-triangle-exclamation"></i> 注意：此提示词不会发送给规划AI。它是注入给主AI的最终指令。</div>';
+        }
+
+        const segment = $(`
+            <div class="qrf_prompt_segment ${extraClass}" data-id="${prompt.id}" data-deletable="${isDeletable}">
+                <div class="qrf_prompt_header">
+                    <input type="text" class="text_pole qrf_prompt_name" placeholder="Prompt Name" value="${prompt.name || 'Prompt ' + (index + 1)}" />
+                    <select class="text_pole qrf_prompt_role" ${roleDisabled}>
+                        <option value="system" ${prompt.role === 'system' ? 'selected' : ''}>System</option>
+                        <option value="user" ${prompt.role === 'user' ? 'selected' : ''}>User</option>
+                        <option value="assistant" ${prompt.role === 'assistant' ? 'selected' : ''}>Assistant</option>
+                    </select>
+                    <div class="qrf_prompt_controls">
+                        <button class="menu_button qrf_prompt_up_btn" title="Move Up" ${index === 0 || isFinalDirective ? 'disabled' : ''}><i class="fa-solid fa-arrow-up"></i></button>
+                        <button class="menu_button qrf_prompt_down_btn" title="Move Down" ${index === prompts.length - 1 || isFinalDirective ? 'disabled' : ''}><i class="fa-solid fa-arrow-down"></i></button>
+                        <button class="menu_button qrf_prompt_delete_btn" title="Delete" ${!isDeletable ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''}><i class="fa-solid fa-trash"></i></button>
+                    </div>
+                </div>
+                <textarea class="text_pole qrf_prompt_content" rows="4"></textarea>
+                ${extraNote}
+            </div>
+        `);
+        
+        // 使用 .val() 设置 textarea 内容以处理特殊字符
+        segment.find('.qrf_prompt_content').val(prompt.content || '');
+
+        container.append(segment);
+    });
+}
+
 /**
  * 加载并填充提示词预设到下拉菜单。
  * @param {JQuery} panel - 设置面板的jQuery对象。
@@ -575,11 +669,17 @@ function saveAsNewPreset(panel) {
   const presets = extension_settings[extensionName]?.promptPresets || [];
   const existingPresetIndex = presets.findIndex(p => p.name === presetName);
 
+  // 获取当前提示词列表
+  const currentPrompts = getPromptsFromUI();
+
   const newPresetData = {
     name: presetName,
-    mainPrompt: panel.find('#qrf_main_prompt').val(),
-    systemPrompt: panel.find('#qrf_system_prompt').val(),
-    finalSystemDirective: panel.find('#qrf_final_system_directive').val(),
+    prompts: currentPrompts, // 使用新的 prompts 数组
+    // 兼容旧字段，虽然可能不再使用
+    mainPrompt: '', 
+    systemPrompt: '',
+    finalSystemDirective: '',
+    
     rateMain: parseFloat(panel.find('#qrf_rate_main').val()),
     ratePersonal: parseFloat(panel.find('#qrf_rate_personal').val()),
     rateErotic: parseFloat(panel.find('#qrf_rate_erotic').val()),
@@ -637,11 +737,11 @@ function overwriteSelectedPreset(panel) {
     return;
   }
 
+  const currentPrompts = getPromptsFromUI();
+
   const updatedPresetData = {
     name: selectedName,
-    mainPrompt: panel.find('#qrf_main_prompt').val(),
-    systemPrompt: panel.find('#qrf_system_prompt').val(),
-    finalSystemDirective: panel.find('#qrf_final_system_directive').val(),
+    prompts: currentPrompts,
     rateMain: parseFloat(panel.find('#qrf_rate_main').val()),
     ratePersonal: parseFloat(panel.find('#qrf_rate_personal').val()),
     rateErotic: parseFloat(panel.find('#qrf_rate_erotic').val()),
@@ -753,11 +853,41 @@ function importPromptPresets(file, panel) {
 
       importedPresets.forEach(preset => {
         if (preset && typeof preset.name === 'string' && preset.name.length > 0) {
+            
+          // 迁移逻辑
+          let importedPrompts = [];
+          if (preset.prompts && Array.isArray(preset.prompts)) {
+              importedPrompts = preset.prompts;
+          } else {
+              // 旧格式迁移
+              importedPrompts = [
+                  {
+                    id: 'mainPrompt',
+                    name: '主系统提示词 (通用)',
+                    role: 'system',
+                    content: preset.mainPrompt || '',
+                    deletable: false,
+                  },
+                  {
+                    id: 'systemPrompt',
+                    name: '拦截任务详细指令',
+                    role: 'user',
+                    content: preset.systemPrompt || '',
+                    deletable: false,
+                  },
+                  {
+                    id: 'finalSystemDirective',
+                    name: '最终注入指令 (Storyteller Directive)',
+                    role: 'system',
+                    content: preset.finalSystemDirective || '',
+                    deletable: false,
+                  },
+              ];
+          }
+
           const presetData = {
             name: preset.name,
-            mainPrompt: preset.mainPrompt || '',
-            systemPrompt: preset.systemPrompt || '',
-            finalSystemDirective: preset.finalSystemDirective || '',
+            prompts: importedPrompts,
             rateMain: preset.rateMain ?? 1.0,
             ratePersonal: preset.ratePersonal ?? 1.0,
             rateErotic: preset.rateErotic ?? 1.0,
@@ -862,10 +992,8 @@ function loadSettings(panel) {
   panel.find('#qrf_rate_erotic').val(apiSettings.rateErotic);
   panel.find('#qrf_rate_cuckold').val(apiSettings.rateCuckold);
 
-  // 加载提示词
-  panel.find('#qrf_main_prompt').val(apiSettings.mainPrompt);
-  panel.find('#qrf_system_prompt').val(apiSettings.systemPrompt);
-  panel.find('#qrf_final_system_directive').val(apiSettings.finalSystemDirective);
+  // 加载提示词 (新的渲染逻辑)
+  renderPrompts(panel, apiSettings.prompts || []);
 
   updateApiUrlVisibility(panel, apiSettings.apiMode);
   updateWorldbookSourceVisibility(panel, apiSettings.worldbookSource || 'character');
@@ -933,6 +1061,13 @@ export function initializeBindings() {
   // 优化1: 创建一个统一的保存处理器，以避免代码重复
   const handleSettingChange = function (element) {
     const el = $(element);
+    
+    // 忽略动态提示词的输入框，它们由专门的逻辑处理
+    if (el.closest('.qrf_prompt_segment').length > 0) {
+        savePrompts();
+        return;
+    }
+
     let key;
 
     if (element.name === 'qrf_worldbook_source') {
@@ -1004,6 +1139,57 @@ export function initializeBindings() {
       // 手动触发模型输入框的change，会由上面的监听器捕获并保存
       panel.find('#qrf_model').val(selectedModel).trigger('change');
     }
+  });
+
+  // --- 提示词列表事件 ---
+  
+  panel.on('click', '#qrf_add_prompt_btn', function() {
+      const container = $('#qrf_prompts_container');
+      
+      const newPrompt = {
+          id: Date.now().toString(),
+          name: 'New Prompt',
+          role: 'system',
+          content: '',
+          deletable: true
+      };
+      
+      // 获取当前所有，添加新的，然后重绘
+      const prompts = getPromptsFromUI();
+      prompts.push(newPrompt);
+      renderPrompts(panel, prompts);
+      savePrompts();
+  });
+
+  panel.on('click', '.qrf_prompt_delete_btn', function() {
+      const segment = $(this).closest('.qrf_prompt_segment');
+      if (segment.data('deletable') === false) return;
+      
+      if (confirm('确定要删除这个提示词吗？')) {
+          segment.remove();
+          savePrompts();
+      }
+  });
+
+  panel.on('click', '.qrf_prompt_up_btn', function() {
+      const segment = $(this).closest('.qrf_prompt_segment');
+      const prev = segment.prev();
+      if (prev.length) {
+          segment.insertBefore(prev);
+          savePrompts();
+          // 重新渲染以更新按钮状态 (up/down disabled)
+          renderPrompts(panel, getPromptsFromUI());
+      }
+  });
+
+  panel.on('click', '.qrf_prompt_down_btn', function() {
+      const segment = $(this).closest('.qrf_prompt_segment');
+      const next = segment.next();
+      if (next.length) {
+          segment.insertAfter(next);
+          savePrompts();
+          renderPrompts(panel, getPromptsFromUI());
+      }
   });
 
   // --- 功能按钮事件 ---
@@ -1107,10 +1293,39 @@ export function initializeBindings() {
 
     if (selectedPreset) {
       // [增强] 当选择预设时，直接、原子性地更新UI和设置
+      
+      let presetPrompts = [];
+      if (selectedPreset.prompts && Array.isArray(selectedPreset.prompts)) {
+          presetPrompts = selectedPreset.prompts;
+      } else {
+           // 旧预设兼容
+           presetPrompts = [
+                {
+                    id: 'mainPrompt',
+                    name: '主系统提示词 (通用)',
+                    role: 'system',
+                    content: selectedPreset.mainPrompt || '',
+                    deletable: false,
+                },
+                {
+                    id: 'systemPrompt',
+                    name: '拦截任务详细指令',
+                    role: 'user',
+                    content: selectedPreset.systemPrompt || '',
+                    deletable: false,
+                },
+                {
+                    id: 'finalSystemDirective',
+                    name: '最终注入指令 (Storyteller Directive)',
+                    role: 'system',
+                    content: selectedPreset.finalSystemDirective || '',
+                    deletable: false,
+                },
+            ];
+      }
+
       const presetData = {
-        mainPrompt: selectedPreset.mainPrompt,
-        systemPrompt: selectedPreset.systemPrompt,
-        finalSystemDirective: selectedPreset.finalSystemDirective,
+        prompts: presetPrompts,
         rateMain: selectedPreset.rateMain ?? 1.0,
         ratePersonal: selectedPreset.ratePersonal ?? 1.0,
         rateErotic: selectedPreset.rateErotic ?? 1.0,
@@ -1122,9 +1337,7 @@ export function initializeBindings() {
       };
 
       // 1. 更新UI界面
-      panel.find('#qrf_main_prompt').val(presetData.mainPrompt);
-      panel.find('#qrf_system_prompt').val(presetData.systemPrompt);
-      panel.find('#qrf_final_system_directive').val(presetData.finalSystemDirective);
+      renderPrompts(panel, presetData.prompts);
       panel.find('#qrf_rate_main').val(presetData.rateMain);
       panel.find('#qrf_rate_personal').val(presetData.ratePersonal);
       panel.find('#qrf_rate_erotic').val(presetData.rateErotic);
@@ -1156,21 +1369,10 @@ export function initializeBindings() {
   });
 
   // --- 重置按钮事件 ---
-
-  panel.find('#qrf_reset_main_prompt').on('click', function () {
-    panel.find('#qrf_main_prompt').val(defaultSettings.apiSettings.mainPrompt).trigger('change');
-    toastr.success('主提示词已重置为默认值。');
-  });
-
-  panel.find('#qrf_reset_system_prompt').on('click', function () {
-    panel.find('#qrf_system_prompt').val(defaultSettings.apiSettings.systemPrompt).trigger('change');
-    toastr.success('拦截任务指令已重置为默认值。');
-  });
-
-  panel.find('#qrf_reset_final_system_directive').on('click', function () {
-    panel.find('#qrf_final_system_directive').val(defaultSettings.apiSettings.finalSystemDirective).trigger('change');
-    toastr.success('最终注入指令已重置为默认值。');
-  });
+  
+  // The old reset buttons are removed from HTML, but if we want to support resetting specific prompts, 
+  // we can add "Reset" button to the segment header for basic prompts?
+  // Or just leave it as is (users can reload preset).
 
   panel.data('events-bound', true);
   console.log(`[${extensionName}] UI事件已成功绑定，自动保存已激活。`);
@@ -1257,3 +1459,5 @@ export function initializeBindings() {
     panel.find('#qrf_worldbook_entry_filter').val('').trigger('input');
   });
 }
+
+

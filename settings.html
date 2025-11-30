@@ -163,29 +163,12 @@
             </div>
         </fieldset>
 
-        <div class="qrf_settings_block">
-            <div class="qrf_label_with_button_wrapper">
-                <label for="qrf_main_prompt">主系统提示词 (通用)</label>
-                <button id="qrf_reset_main_prompt" class="menu_button qrf_reset_button" title="重置为主提示词"><i class="fa-solid fa-undo"></i></button>
-            </div>
-            <textarea id="qrf_main_prompt" class="text_pole" rows="3"></textarea>
-            <small class="notes">为AI设定一个通用的身份或背景。</small>
+        <div id="qrf_prompts_container" class="qrf_prompts_list">
+            <!-- Prompts will be dynamically generated here -->
         </div>
-        <div class="qrf_settings_block">
-            <div class="qrf_label_with_button_wrapper">
-                <label for="qrf_system_prompt">拦截任务详细指令</label>
-                <button id="qrf_reset_system_prompt" class="menu_button qrf_reset_button" title="重置为默认拦截任务"><i class="fa-solid fa-undo"></i></button>
-            </div>
-            <textarea id="qrf_system_prompt" class="text_pole" rows="8"></textarea>
-            <small class="notes">告诉API如何具体地处理用户的输入。</small>
-        </div>
-        <div class="qrf_settings_block">
-             <div class="qrf_label_with_button_wrapper">
-                <label for="qrf_final_system_directive">最终注入指令 (Storyteller Directive)</label>
-                <button id="qrf_reset_final_system_directive" class="menu_button qrf_reset_button" title="重置为默认注入指令"><i class="fa-solid fa-undo"></i></button>
-            </div>
-            <textarea id="qrf_final_system_directive" class="text_pole" rows="4"></textarea>
-            <small class="notes">这段指令将与用户的输入和生成的`<plot>`模块组合，最终发送给酒馆AI。</small>
+        
+        <div class="qrf_settings_block" style="text-align: center; margin-top: 10px;">
+            <button id="qrf_add_prompt_btn" class="menu_button"><i class="fa-solid fa-plus"></i> 添加提示词</button>
         </div>
     </fieldset>
 
