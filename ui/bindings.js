@@ -152,7 +152,7 @@ async function loadTavernApiProfiles(panel) {
 // ---- 新的、支持角色卡独立配置的设置保存/加载逻辑 ----
 
 // 需要保存到角色卡的设置项列表
-const characterSpecificSettings = ['worldbookSource', 'selectedWorldbooks', 'disabledWorldbookEntries'];
+const characterSpecificSettings = ['worldbookSource', 'selectedWorldbooks', 'disabledWorldbookEntries', '_legacyEntriesMigrated'];
 
 /**
  * 保存单个设置项。
@@ -444,6 +444,39 @@ export async function loadWorldbookEntries(panel) {
 
     container.empty();
     totalEntries = allEntries.length;
+
+    // [新功能] 迁移逻辑：首次加载时，将当前所有条目设为未选中（加入禁用列表），
+    // 从而实现“默认全不勾选，新增条目自动勾选”的效果。
+    if (this_chid !== -1 && characters[this_chid]) {
+        const charSettings = characters[this_chid].data?.extensions?.[extensionName]?.apiSettings || {};
+        
+        // 检查是否已经迁移过
+        if (!charSettings._legacyEntriesMigrated) {
+            console.log(`[${extensionName}] 检测到首次运行新逻辑，正在将现有条目迁移为“未选中”状态...`);
+            
+            const newDisabledEntries = {};
+            // 将所有找到的条目加入禁用列表
+            allEntries.forEach(entry => {
+                if (!newDisabledEntries[entry.bookName]) {
+                    newDisabledEntries[entry.bookName] = [];
+                }
+                newDisabledEntries[entry.bookName].push(entry.uid);
+            });
+
+            // 保存设置
+            // 注意：这里需要await，但loadWorldbookEntries本身是async的
+            await saveSetting('disabledWorldbookEntries', newDisabledEntries);
+            await saveSetting('_legacyEntriesMigrated', true);
+
+            // 更新当前内存中的变量，以便立即渲染正确状态
+            disabledEntries = newDisabledEntries;
+            isAllSelected = false;
+
+            if (totalEntries > 0) {
+                toastr.info('已根据新策略将现有世界书条目初始化为未选中状态。后续新增的条目将自动选中。', '世界书状态重置');
+            }
+        }
+    }
 
     if (totalEntries === 0) {
       container.html('<p class="notes">所选世界书没有条目。</p>');
