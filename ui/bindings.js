@@ -473,7 +473,7 @@ export async function loadWorldbookEntries(panel) {
             isAllSelected = false;
 
             if (totalEntries > 0) {
-                toastr.info('已根据新策略将现有世界书条目初始化为未选中状态。后续新增的条目将自动选中。', '世界书状态重置');
+                toastr.info('当前剧情推进插件已根据新策略将插件内部读取的所有世界书条目初始化为未选中状态。后续新增的条目将自动选中。（请同时使用数据库插件的用户在有旧对话的角色卡里及时重新勾选上3个索引条目！！）', '世界书状态重置', { timeOut: 10000, extendedTimeOut: 5000 });
             }
         }
     }
