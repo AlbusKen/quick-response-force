@@ -1,5 +1,5 @@
 // 剧情规划大师 - 聊天优化插件
-// 由Cline移植并重构，核心功能来自Amily2号插件
+// 由Cline移植并重构
 
 import { callInterceptionApi } from './api.js';
 import { getCombinedWorldbookContent } from './lore.js';

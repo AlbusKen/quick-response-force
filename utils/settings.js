@@ -1,5 +1,5 @@
 // 快速响应部队 - 插件设置
-// 由Cline移植并重构，核心功能来自Amily2号插件
+// 由Cline移植并重构
 
 export const extensionName = 'quick-response-force';
 
