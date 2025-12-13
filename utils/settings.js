@@ -94,6 +94,7 @@ export const defaultSettings = {
       rateErotic: 0,
       rateCuckold: 10,
       extractTags: '',
+      extractTagsFromInput: '',
       minLength: null,
       contextTurnCount: 3,
     },
@@ -113,6 +114,7 @@ export const defaultSettings = {
     frequencyPenalty: 1,
     contextTurnCount: 3,
     extractTags: '', // [新功能] 标签摘取
+    extractTagsFromInput: "正文", // [新功能] 从历史记录中提取标签
     worldbookEnabled: true,
     worldbookSource: 'character', // 'character' or 'manual'
     worldbookCharLimit: 60000,
