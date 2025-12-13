@@ -476,26 +476,6 @@ async function runOptimizationLogic(userMessage) {
         }
       }
 
-      // [新功能] 从 messageForTavern 中提取 AMxx 格式内容，按数字从大到小排序
-      const amRegex = /\bAM\d{2}(?:,\s*AM\d{2})*\b/g;
-      messageForTavern = messageForTavern.replace(amRegex, (match) => {
-        // 提取所有的 AMxx
-        const amMatches = match.match(/\bAM\d{2}\b/g);
-        if (!amMatches || amMatches.length === 0) {
-          return match;
-        }
-
-        // 按数字从大到小排序
-        const sortedAm = amMatches.sort((a, b) => {
-          const numA = parseInt(a.substring(2), 10);
-          const numB = parseInt(b.substring(2), 10);
-          return numB - numA; // 降序排列
-        });
-
-        // 用逗号连接排序后的结果
-        return sortedAm.join(',');
-      });
-
       // 使用可能被处理过的 messageForTavern 构建最终消息
       const finalMessage = `${userMessage}\n\n${finalSystemDirectiveContent}\n${messageForTavern}`;
 
