@@ -1012,6 +1012,15 @@ function loadSettings(panel) {
   panel.find('#qrf_extract_tags').val(apiSettings.extractTags || '');
   panel.find('#qrf_extract_tags_from_input').val(apiSettings.extractTagsFromInput || '');
 
+  // [新功能] 加载自动化循环设置
+  // Defensive coding: Ensure loopSettings is an object even if defaults are missing/cached
+  const loopSettings = globalSettings.loopSettings || (defaultSettings && defaultSettings.loopSettings) || {};
+  panel.find('#qrf_quick_reply_content').val(loopSettings.quickReplyContent || '');
+  panel.find('#qrf_loop_tags').val(loopSettings.loopTags || '');
+  panel.find('#qrf_loop_delay').val(loopSettings.loopDelay ?? 5);
+  panel.find('#qrf_loop_total_duration').val(loopSettings.loopTotalDuration ?? 0);
+  panel.find('#qrf_max_retries').val(loopSettings.maxRetries ?? 3);
+
   // 加载匹配替换速率
   panel.find('#qrf_rate_main').val(apiSettings.rateMain);
   panel.find('#qrf_rate_personal').val(apiSettings.ratePersonal);
@@ -1057,6 +1066,7 @@ function loadSettings(panel) {
  * 为设置面板绑定所有事件。
  */
 export function initializeBindings() {
+  console.log('[剧情优化大师] Bindings Initializing... v2.1.0');
   const panel = $('#qrf_settings_panel');
   if (panel.length === 0 || panel.data('events-bound')) {
     return;
@@ -1118,6 +1128,21 @@ export function initializeBindings() {
       'rateErotic',
       'rateCuckold',
     ];
+
+    // [新功能] 处理循环设置的特殊保存逻辑
+    if (['quickReplyContent', 'loopTags', 'loopDelay', 'loopTotalDuration', 'maxRetries'].includes(key)) {
+        if (!extension_settings[extensionName].loopSettings) {
+            extension_settings[extensionName].loopSettings = {};
+        }
+        
+        let valToSave = value;
+        if (key === 'loopDelay' || key === 'loopTotalDuration' || key === 'maxRetries') valToSave = parseInt(value, 10);
+        
+        extension_settings[extensionName].loopSettings[key] = valToSave;
+        console.log(`[${extensionName}] Loop setting updated: ${key} ->`, valToSave);
+        saveSettingsDebounced();
+        return; // Skip the rest of the generic saving logic
+    }
     if (floatKeys.includes(key) && value !== '') {
       value = parseFloat(value);
     } else if (element.type === 'range' || element.type === 'number') {
@@ -1475,5 +1500,58 @@ export function initializeBindings() {
   // 清除筛选按钮
   panel.on('click.qrf', '#qrf_worldbook_entry_clear_filter', function () {
     panel.find('#qrf_worldbook_entry_filter').val('').trigger('input');
+  });
+
+  // --- 自动化循环控制事件 ---
+  panel.on('click.qrf', '#qrf_start_loop_btn', function() {
+      const duration = parseInt(panel.find('#qrf_loop_total_duration').val(), 10);
+      if (!duration || duration <= 0) {
+          toastr.warning('请设置一个大于0的总倒计时 (分钟) 才能启动循环。');
+          return;
+      }
+
+      // 触发开始事件，index.js 会监听此事件
+      eventSource.emit('qrf-start-loop');
+      $(this).hide();
+      panel.find('#qrf_stop_loop_btn').show();
+      panel.find('#qrf_loop_status_text').text('运行中').css('color', 'var(--green)');
+      toastr.success('自动化循环已启动。');
+  });
+
+  panel.on('click.qrf', '#qrf_stop_loop_btn', function() {
+      // 触发停止事件
+      eventSource.emit('qrf-stop-loop');
+      $(this).hide();
+      panel.find('#qrf_start_loop_btn').show();
+      panel.find('#qrf_loop_status_text').text('已停止').css('color', 'var(--red)');
+      toastr.info('自动化循环已停止。');
+  });
+
+  // [UI状态同步] 监听循环状态变化事件，以便在面板重新打开或其他原因导致UI重置时恢复状态
+  eventSource.on('qrf-loop-status-changed', (isRunning) => {
+      const panel = $('#qrf_settings_panel');
+      const timerDisplay = panel.find('#qrf_loop_timer_display');
+      if (isRunning) {
+          panel.find('#qrf_start_loop_btn').hide();
+          panel.find('#qrf_stop_loop_btn').show();
+          panel.find('#qrf_loop_status_text').text('运行中').css('color', 'var(--green)');
+          timerDisplay.show();
+      } else {
+          panel.find('#qrf_stop_loop_btn').hide();
+          panel.find('#qrf_start_loop_btn').show();
+          panel.find('#qrf_loop_status_text').text('已停止').css('color', 'var(--red)');
+          timerDisplay.hide().text('');
+      }
+  });
+
+  // 监听循环计时器更新
+  eventSource.on('qrf-loop-timer-tick', (timeLeftFormatted) => {
+      $('#qrf_loop_timer_display').text(`(剩余: ${timeLeftFormatted})`);
+  });
+
+  // --- 折叠面板逻辑 ---
+  panel.on('click.qrf', '.qrf-collapsible legend', function() {
+      const fieldset = $(this).closest('.settings-group');
+      fieldset.toggleClass('collapsed');
   });
 }

@@ -40,7 +40,7 @@ function normalizeApiResponse(responseData) {
 /**
  * 主API调用入口，根据设置选择不同的模式
  */
-export async function callInterceptionApi(messages, apiSettings) {
+export async function callInterceptionApi(messages, apiSettings, abortSignal = null) {
   // messages 已经在 index.js 中构建完成，直接使用
   // apiSettings 包含API连接配置
 
@@ -76,6 +76,8 @@ export async function callInterceptionApi(messages, apiSettings) {
           profileId,
           messages,
           apiSettings.maxTokens,
+          // note: sendRequest signature might not strictly support signal, but if it does later:
+          // abortSignal
         );
       } finally {
         // 无论成功或失败，都切换回原始预设
@@ -134,6 +136,7 @@ export async function callInterceptionApi(messages, apiSettings) {
           method: 'POST',
           headers: { ...getRequestHeaders(), 'Content-Type': 'application/json' },
           body: JSON.stringify(requestBody),
+          signal: abortSignal,
         });
 
         if (!response.ok) {

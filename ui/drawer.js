@@ -32,7 +32,11 @@ export async function createDrawer() {
 
     try {
         const contentWrapper = $('#qrf_extension_frame .inline-drawer-content');
-        const settingsPanelHtml = await $.get(`/${extensionFolderPath}/settings.html?v=${Date.now()}`);
+        // Use a more explicit cache busting parameter and log it
+        const fetchUrl = `/${extensionFolderPath}/settings.html?nocache=${Date.now()}`;
+        console.log(`[${extensionName}] Fetching settings panel from: ${fetchUrl}`);
+        
+        const settingsPanelHtml = await $.get(fetchUrl);
         contentWrapper.html(settingsPanelHtml);
 
         // 初始化UI数据绑定和事件
