@@ -153,7 +153,7 @@
     transition: max-height 0.3s ease-out, opacity 0.3s ease-out, padding 0.3s ease;
     max-height: 2000px; /* Arbitrary large value */
     opacity: 1;
-    overflow: hidden;
+    overflow: hidden; /* 保持 hidden 用于折叠动画 */
 }
 
 #qrf_settings_panel .settings-group.collapsed .qrf-collapsible-content {
@@ -606,6 +606,10 @@
     flex-direction: column;
     gap: 15px;
     margin-bottom: 15px;
+    max-height: 600px; /* 设置最大高度 */
+    overflow-y: auto; /* 允许垂直滚动 */
+    overflow-x: hidden; /* 禁止水平滚动 */
+    padding-right: 5px; /* 为滚动条留出空间 */
 }
 
 .qrf_prompt_segment {
