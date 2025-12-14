@@ -99,6 +99,15 @@ export const defaultSettings = {
     },
   ],
   lastUsedPresetName: '剧情索引', // 新增：用于存储上次使用的预设名称
+  // [新功能] 自动化循环设置
+  loopSettings: {
+    quickReplyContent: '',
+    loopTags: '',
+    loopDelay: 5, // 秒
+    retryDelay: 3, // 秒
+    loopTotalDuration: 0, // 总倒计时(分钟)，0为不限制
+    maxRetries: 3, // 最大重试次数
+  },
   apiSettings: {
     apiMode: 'custom', // 'custom' or 'tavern'
     useMainApi: true,

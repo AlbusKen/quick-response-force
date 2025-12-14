@@ -8,9 +8,36 @@ import { defaultSettings } from './utils/settings.js';
 import { characters, eventSource, event_types, getRequestHeaders, saveSettings, this_chid } from '/script.js';
 import { extension_settings, getContext } from '/scripts/extensions.js';
 
+console.log('[剧情优化大师] v2.1.0 Loading... (Timestamp: ' + Date.now() + ')');
+
 const extension_name = 'quick-response-force';
 let isProcessing = false;
 let tempPlotToSave = null; // [架构重构] 用于在生成和消息创建之间临时存储plot
+
+// [新功能] 自动化循环状态管理
+const loopState = {
+  isLooping: false,
+  isRetrying: false, // [新功能] 标记当前是否处于重试流程
+  timerId: null,
+  retryCount: 0,
+  startTime: 0, // 循环开始时间
+  totalDuration: 0, // 总时长(ms)
+  tickInterval: null, // 倒计时更新定时器
+  awaitingReply: false, // 是否正在等待本轮生成结果（用于 GENERATION_ENDED 检测）
+};
+
+// [健全性] 规划阶段防护：
+// 规划阶段可能通过酒馆主API（TavernHelper.generateRaw）发起一次“非聊天”的生成请求，
+// 从而触发酒馆的生成事件（如 GENERATION_ENDED / message_received 等）。
+// 这些事件不应被当作“剧情生成结束”来处理（否则会误触发循环标签校验、或提前把 plot 附加到错误楼层）。
+const planningGuard = {
+  inProgress: false,
+  // 规划阶段如果使用 useMainApi(generateRaw)，通常会触发一次 GENERATION_ENDED。用计数精确忽略。
+  ignoreNextGenerationEndedCount: 0,
+};
+
+// [新功能] 规划任务中止控制器
+let abortController = null;
 
 /**
  * 将从 st-memory-enhancement 获取的原始表格JSON数据转换为更适合LLM读取的文本格式。
@@ -167,6 +194,266 @@ async function loadPresetAndCleanCharacterData() {
 }
 
 /**
+ * [新功能] 开始自动化循环
+ */
+async function startAutoLoop() {
+  const settings = extension_settings[extension_name];
+  const loopDuration = (settings.loopSettings.loopTotalDuration || 0) * 60 * 1000;
+
+  if (!settings || !settings.loopSettings || !settings.loopSettings.quickReplyContent) {
+    toastr.error('请先设置快速回复内容 (Quick Reply Content)', '无法启动循环');
+    stopAutoLoop();
+    return;
+  }
+
+  if (loopDuration <= 0) {
+      toastr.error('请设置有效的总倒计时 (大于0分钟)', '无法启动循环');
+      stopAutoLoop();
+      return;
+  }
+
+  loopState.isLooping = true;
+  loopState.isRetrying = false; // 初始状态非重试
+  loopState.startTime = Date.now();
+  loopState.totalDuration = loopDuration;
+  loopState.retryCount = 0; // 重置重试计数
+  
+  eventSource.emit('qrf-loop-status-changed', true);
+  console.log(`[${extension_name}] Auto Loop Started. Duration: ${loopDuration}ms`);
+
+  // 启动倒计时更新
+  loopState.tickInterval = setInterval(() => {
+      const elapsed = Date.now() - loopState.startTime;
+      const remaining = Math.max(0, loopState.totalDuration - elapsed);
+      
+      if (remaining <= 0) {
+          stopAutoLoop();
+          toastr.info('总倒计时结束，自动化循环已停止。', '循环结束');
+          return;
+      }
+
+      // 格式化剩余时间 mm:ss
+      const minutes = Math.floor(remaining / 60000);
+      const seconds = Math.floor((remaining % 60000) / 1000);
+      const formatted = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+      eventSource.emit('qrf-loop-timer-tick', formatted);
+  }, 1000);
+
+  // 立即触发一次生成
+  triggerLoopGeneration();
+}
+
+/**
+ * [新功能] 停止自动化循环
+ */
+function stopAutoLoop() {
+  loopState.isLooping = false;
+  loopState.isRetrying = false; // 确保停止时重置重试状态
+  loopState.awaitingReply = false;
+  if (loopState.timerId) {
+    clearTimeout(loopState.timerId);
+    loopState.timerId = null;
+  }
+  if (loopState.tickInterval) {
+      clearInterval(loopState.tickInterval);
+      loopState.tickInterval = null;
+  }
+  eventSource.emit('qrf-loop-status-changed', false);
+  console.log(`[${extension_name}] Auto Loop Stopped.`);
+}
+
+/**
+ * [新功能] 触发循环中的单次生成
+ */
+async function triggerLoopGeneration() {
+  if (!loopState.isLooping) return;
+
+  const settings = extension_settings[extension_name];
+  const quickReplyContent = settings.loopSettings.quickReplyContent;
+
+  if (!quickReplyContent) {
+    console.warn(`[${extension_name}] Loop content is empty, stopping loop.`);
+    stopAutoLoop();
+    return;
+  }
+
+  // 模拟用户输入并发送
+  // 注意：这里我们直接设置输入框并触发点击，以便复用现有的 intercept 逻辑 (Strategy 2)
+  loopState.awaitingReply = true;
+  $('#send_textarea').val(quickReplyContent);
+  $('#send_textarea').trigger('input');
+  
+  // 给一点时间让UI更新，然后点击发送
+  setTimeout(() => {
+    if (loopState.isLooping) {
+        $('#send_but').click();
+    }
+  }, 100);
+}
+
+/**
+ * [新功能] 验证AI回复是否包含所需标签
+ * @param {string} content - AI回复内容
+ * @param {string} tags - 逗号分隔的标签列表
+ * @returns {boolean} - 是否验证通过
+ */
+function validateLoopTags(content, tags) {
+    if (!tags || !tags.trim()) return true; // 如果未设置标签，默认通过
+    
+    const tagList = tags.split(/[,，]/).map(t => t.trim()).filter(t => t);
+    if (tagList.length === 0) return true;
+
+    for (const tag of tagList) {
+        if (!content.includes(tag)) {
+            console.log(`[${extension_name}] Loop validation failed: missing tag "${tag}"`);
+            return false;
+        }
+    }
+    return true;
+}
+
+// =========================
+// [新流程] 循环检测：基于 GENERATION_ENDED + 规划标记
+// =========================
+
+async function triggerDirectRegenerateForLoop(loopSettings) {
+  // 标记：本轮依然在等待回复（重试）
+  loopState.awaitingReply = true;
+
+  // 使用酒馆正规生成入口触发回复，确保消息入库+渲染
+  if (window.TavernHelper?.triggerSlash) {
+    await window.TavernHelper.triggerSlash('/trigger await=true');
+    return;
+  }
+  if (window.original_TavernHelper_generate) {
+    window.original_TavernHelper_generate({ user_input: '' });
+    return;
+  }
+  window.TavernHelper?.generate?.({ user_input: '' });
+}
+
+async function enterLoopRetryFlow({ loopSettings, shouldDeleteAiReply }) {
+  loopState.isRetrying = true;
+  loopState.retryCount++;
+  const maxRetries = loopSettings.maxRetries ?? 3;
+
+  console.log(`[${extension_name}] 进入重试流程: ${loopState.retryCount}/${maxRetries}。`);
+
+  if (loopState.retryCount > maxRetries) {
+    toastr.error(`连续失败超过 ${maxRetries} 次，自动化循环已停止。`, '循环中止');
+    stopAutoLoop();
+    return;
+  }
+
+  // 需要删除AI楼层时，先删最后一条（仅当最后一条确实是AI）
+  if (shouldDeleteAiReply) {
+    const ctx = getContext();
+    const last = ctx?.chat?.length ? ctx.chat[ctx.chat.length - 1] : null;
+    if (last && !last.is_user) {
+      console.log(`[${extension_name}] [重试] 删除缺失标签的AI楼层...`);
+      try {
+        if (typeof ctx.deleteLastMessage === 'function') {
+          await ctx.deleteLastMessage();
+        } else if (window.SillyTavern?.deleteLastMessage) {
+          await window.SillyTavern.deleteLastMessage();
+        }
+      } catch (e) {
+        console.error(`[${extension_name}] 删除楼层失败:`, e);
+      }
+    } else {
+      console.log(`[${extension_name}] [重试] 不需要删除：最新楼层不是AI。`);
+    }
+  }
+
+  // 延迟后重试生成
+  loopState.timerId = setTimeout(async () => {
+    // 等待系统空闲
+    let busyWait = 0;
+    while (window.SillyTavern?.generating && busyWait < 20) {
+      await new Promise(r => setTimeout(r, 500));
+      busyWait++;
+    }
+    await triggerDirectRegenerateForLoop(loopSettings);
+  }, (loopSettings.retryDelay || 3) * 1000);
+}
+
+/**
+ * [新功能] 循环逻辑的核心事件监听器：生成结束时触发
+ */
+async function onLoopGenerationEnded() {
+  if (!loopState.isLooping) return;
+  if (!loopState.awaitingReply) return;
+
+  // [健全性] 忽略规划阶段触发的生成结束事件
+  if (planningGuard.inProgress) {
+    console.log(`[${extension_name}] [Loop] Planning in progress, ignoring GENERATION_ENDED.`);
+    return;
+  }
+  if (planningGuard.ignoreNextGenerationEndedCount > 0) {
+    planningGuard.ignoreNextGenerationEndedCount--;
+    console.log(`[${extension_name}] [Loop] Ignoring planning-triggered GENERATION_ENDED (${planningGuard.ignoreNextGenerationEndedCount} left).`);
+    return;
+  }
+
+  // 等待一下让消息同步
+  await new Promise(resolve => setTimeout(resolve, 1500));
+
+  if (!loopState.isLooping || !loopState.awaitingReply) return;
+
+  const settings = extension_settings[extension_name];
+  const loopSettings = settings.loopSettings || defaultSettings.loopSettings;
+  const ctx = getContext();
+
+  if (!ctx?.chat || ctx.chat.length === 0) return;
+
+  // 获取最新消息
+  let lastMessage = ctx.chat[ctx.chat.length - 1];
+
+  // [关键] 如果最新消息是用户消息，且带有规划标记，说明这是规划层，应该忽略
+  if (lastMessage.is_user && lastMessage._qrf_from_planning) {
+    console.log(`[${extension_name}] [Loop] 检测到规划层(user with _qrf_from_planning)，忽略，继续等待AI回复。`);
+    // 仍然在等待回复，不清空 awaitingReply
+    return;
+  }
+
+  // 如果依然是用户消息（但没有规划标记），说明生成未产生有效AI回复，视为验证失败
+  if (lastMessage.is_user) {
+    console.warn(`[${extension_name}] [Loop] 生成结束但最后一条是用户消息（无规划标记），等待2s后重试检测...`);
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    const updatedCtx = getContext();
+    lastMessage = updatedCtx?.chat?.length ? updatedCtx.chat[updatedCtx.chat.length - 1] : null;
+  }
+
+  // 如果还是没有AI回复，进入重试
+  if (!lastMessage || lastMessage.is_user) {
+    console.warn(`[${extension_name}] [Loop] 未找到AI回复楼层，进入重试。`);
+    loopState.awaitingReply = false; // 本次检测结束
+    await enterLoopRetryFlow({ loopSettings, shouldDeleteAiReply: false });
+    return;
+  }
+
+  // 进行标签检测
+  const ok = validateLoopTags(lastMessage.mes, loopSettings.loopTags);
+  if (ok) {
+    console.log(`[${extension_name}] 标签检测通过。继续循环。`);
+    loopState.isRetrying = false;
+    loopState.retryCount = 0;
+    loopState.awaitingReply = false;
+    // 通过后等待 loopDelay 再进入下一轮
+    loopState.timerId = setTimeout(() => {
+      triggerLoopGeneration();
+    }, (loopSettings.loopDelay || 5) * 1000);
+    return;
+  }
+
+  // 标签检测未通过，进入重试
+  console.log(`[${extension_name}] 标签检测未通过。进入重试。`);
+  loopState.awaitingReply = false; // 本次检测结束
+  await enterLoopRetryFlow({ loopSettings, shouldDeleteAiReply: true });
+}
+
+
+/**
  * [架构重构] 从聊天记录中反向查找最新的plot。
  * @returns {string} - 返回找到的plot文本，否则返回空字符串。
  */
@@ -191,6 +478,17 @@ function getPlotFromHistory() {
  * [架构重构] 将plot附加到最新的AI消息上。
  */
 async function savePlotToLatestMessage() {
+  // [健全性] 忽略规划阶段触发的生成结束事件，避免把 plot 附加到错误楼层 / 或提前清空 tempPlotToSave
+  if (planningGuard.inProgress) {
+    console.log(`[${extension_name}] [Plot] Planning in progress, ignoring GENERATION_ENDED.`);
+    return;
+  }
+  if (planningGuard.ignoreNextGenerationEndedCount > 0) {
+    planningGuard.ignoreNextGenerationEndedCount--;
+    console.log(`[${extension_name}] [Plot] Ignoring planning-triggered GENERATION_ENDED (${planningGuard.ignoreNextGenerationEndedCount} left).`);
+    return;
+  }
+
   if (tempPlotToSave) {
     const context = getContext();
     // 在SillyTavern的事件触发时，chat数组应该已经更新
@@ -214,11 +512,20 @@ async function savePlotToLatestMessage() {
  * @returns {Promise<string|null>} - 返回优化后的完整消息体，如果失败或跳过则返回null。
  */
 async function runOptimizationLogic(userMessage) {
+  // [核心修复] 如果当前处于重试流程，绝对禁止触发剧情规划
+  if (loopState.isRetrying) {
+      console.log(`[${extension_name}] 当前处于重试流程，跳过剧情规划逻辑。`);
+      return null;
+  }
+
   // [功能更新] 触发插件时，发射一个事件，以便UI可以按需刷新
   eventSource.emit('qrf-plugin-triggered');
 
   let $toast = null;
   try {
+    // [健全性] 标记进入规划阶段：用于忽略规划触发的生成事件（GENERATION_ENDED / message_received 等）
+    planningGuard.inProgress = true;
+
     // 在每次执行前，都重新进行一次深度合并，以获取最新、最完整的设置状态
     const currentSettings = extension_settings[extension_name] || {};
     // 确保 prompts 数组存在
@@ -237,7 +544,23 @@ async function runOptimizationLogic(userMessage) {
       return null; // 插件未启用，直接返回
     }
 
-    $toast = toastr.info('正在规划剧情...', '剧情规划大师', { timeOut: 0, extendedTimeOut: 0 });
+    // 重置中止控制器
+    abortController = new AbortController();
+
+    // 创建带中止按钮的 Toast
+    const toastMsg = `
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+            <span class="toastr-message" style="margin-right: 10px;">正在规划剧情...</span>
+            <button class="qrf-abort-btn">终止</button>
+        </div>
+    `;
+    
+    $toast = toastr.info(toastMsg, '', {
+        timeOut: 0,
+        extendedTimeOut: 0,
+        escapeHtml: false,
+        tapToDismiss: false
+    });
 
     const context = getContext();
     const character = characters[this_chid];
@@ -400,11 +723,30 @@ async function runOptimizationLogic(userMessage) {
     let processedMessage = null;
     const maxRetries = 3;
 
+    // 检查中止信号的帮助函数
+    const checkAbort = () => {
+        if (abortController && abortController.signal.aborted) {
+            throw new Error('TaskAbortedByUser');
+        }
+    };
+
+    // 如果规划走“酒馆主API(generateRaw)”路径，会触发一次 GENERATION_ENDED，需要精确忽略
+    const willUseMainApiGenerateRaw = finalApiSettings.apiMode !== 'tavern' && !!finalApiSettings.useMainApi;
+
     if (minLength > 0) {
       for (let i = 0; i < maxRetries; i++) {
+        checkAbort();
         $toast.find('.toastr-message').text(`正在规划剧情... (尝试 ${i + 1}/${maxRetries})`);
+        
+        if (willUseMainApiGenerateRaw) {
+          planningGuard.ignoreNextGenerationEndedCount++;
+        }
+
         // 直接传递构建好的 messages 数组
-        const tempMessage = await callInterceptionApi(messages, finalApiSettings);
+        const tempMessage = await callInterceptionApi(messages, finalApiSettings, abortController.signal);
+        
+        checkAbort(); // API 调用后再次检查
+
         if (tempMessage && tempMessage.length >= minLength) {
           processedMessage = tempMessage;
           if ($toast) toastr.clear($toast);
@@ -417,7 +759,12 @@ async function runOptimizationLogic(userMessage) {
         }
       }
     } else {
-      processedMessage = await callInterceptionApi(messages, finalApiSettings);
+      checkAbort();
+      if (willUseMainApiGenerateRaw) {
+        planningGuard.ignoreNextGenerationEndedCount++;
+      }
+      processedMessage = await callInterceptionApi(messages, finalApiSettings, abortController.signal);
+      checkAbort();
     }
 
     if (processedMessage) {
@@ -472,10 +819,17 @@ async function runOptimizationLogic(userMessage) {
       return null;
     }
   } catch (error) {
+    if (error.message === 'TaskAbortedByUser') {
+        // 用户中止，返回特殊标记对象
+        return { aborted: true };
+    }
     console.error(`[${extension_name}] 在核心优化逻辑中发生错误:`, error);
     if ($toast) toastr.clear($toast);
     toastr.error('剧情规划大师在处理时发生错误。', '规划失败');
     return null;
+  } finally {
+      planningGuard.inProgress = false;
+      abortController = null;
   }
 }
 
@@ -505,8 +859,26 @@ async function onGenerationAfterCommands(type, params, dryRun) {
       if (messageToProcess && messageToProcess.trim().length > 0) {
         isProcessing = true;
         try {
+          // [关键] 如果是在循环模式下，给消息打上规划标记，以便循环检测时忽略
+          const isLoopTriggered = loopState.isLooping && loopState.awaitingReply;
+          if (isLoopTriggered) {
+            lastMessage._qrf_from_planning = true;
+            console.log(`[${extension_name}] [Loop] 标记规划层消息: _qrf_from_planning=true`);
+          }
+
           const finalMessage = await runOptimizationLogic(messageToProcess);
-          if (finalMessage) {
+          
+          if (finalMessage && finalMessage.aborted) {
+            // [策略1] 如果被中止，我们应该怎么做？
+            // 此时消息已经发送到聊天记录了（lastMessage），我们可能无法"撤回"它，
+            // 除非我们删除它。但通常 /send 已经发生了。
+            // 对于 Strategy 1，abort 可能只能停止生成，但消息保留。
+            // 或者我们可以尝试不做任何替换，让其自然结束。
+            console.log(`[${extension_name}] Generation aborted by user in Strategy 1.`);
+            return;
+          }
+
+          if (finalMessage && typeof finalMessage === 'string') {
             params.prompt = finalMessage; // Inject into generation
             lastMessage.mes = finalMessage; // Update chat history
 
@@ -536,7 +908,13 @@ async function onGenerationAfterCommands(type, params, dryRun) {
     isProcessing = true;
     try {
       const finalMessage = await runOptimizationLogic(textInBox);
-      if (finalMessage) {
+      
+      if (finalMessage && finalMessage.aborted) {
+          console.log(`[${extension_name}] Generation aborted by user in Strategy 2.`);
+          return;
+      }
+
+      if (finalMessage && typeof finalMessage === 'string') {
         $('#send_textarea').val(finalMessage);
         $('#send_textarea').trigger('input');
       }
@@ -663,7 +1041,14 @@ jQuery(async () => {
             isProcessing = true;
             try {
               const finalMessage = await runOptimizationLogic(userMessage);
-              if (finalMessage) {
+
+              // 检查是否被中止 (返回了带有 aborted: true 的对象)
+              if (finalMessage && finalMessage.aborted) {
+                 console.log(`[${extension_name}] Generation aborted by user.`);
+                 return; // 直接返回，不调用原始生成，从而保留用户输入
+              }
+
+              if (finalMessage && typeof finalMessage === 'string') {
                 // 根据来源写回
                 if (options.injects?.[0]?.content) {
                   options.injects[0].content = finalMessage;
@@ -692,11 +1077,59 @@ jQuery(async () => {
 
           // 辅助功能
           eventSource.on(event_types.GENERATION_ENDED, savePlotToLatestMessage);
-          eventSource.on(event_types.CHAT_CHANGED, loadPresetAndCleanCharacterData);
+          
+          // [新功能] 循环检测：使用 GENERATION_ENDED 事件，通过规划标记来区分规划层和AI回复层
+          eventSource.on(event_types.GENERATION_ENDED, onLoopGenerationEnded);
+
+          eventSource.on(event_types.CHAT_CHANGED, () => {
+              loadPresetAndCleanCharacterData();
+              // 切换聊天时停止循环
+              if (loopState.isLooping) {
+                  stopAutoLoop();
+                  toastr.info('切换聊天，自动化循环已停止。');
+              }
+          });
+          
+          // [新功能] 监听来自 bindings.js 的控制事件
+          eventSource.on('qrf-start-loop', startAutoLoop);
+          eventSource.on('qrf-stop-loop', stopAutoLoop);
 
           window.qrfEventsRegistered = true;
           console.log(`[${extension_name}] Parallel event listeners registered.`);
         }
+
+        // [修复] 全局委托绑定中止按钮点击事件，确保按钮始终可点击
+        $(document).off('click', '.qrf-abort-btn').on('click', '.qrf-abort-btn', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (abortController) {
+                abortController.abort();
+                console.log(`[${extension_name}] 用户手动中止了规划任务。`);
+                
+                // [新增] 尝试发送停止指令给后端
+                if (window.SillyTavern && window.SillyTavern.stopGeneration) {
+                     window.SillyTavern.stopGeneration();
+                } else {
+                     // Fallback slash command
+                     window.TavernHelper.triggerSlash('/stop');
+                }
+
+                // 强制移除特定的 toast 元素
+                const $abortToast = $('.toast-info:has(.qrf-abort-btn)');
+                if ($abortToast.length > 0) {
+                    toastr.remove(); // 移除当前显示的 toast，无动画
+                    $abortToast.remove(); // 双重保险：直接从 DOM 移除
+                } else {
+                    toastr.remove();
+                }
+                
+                isProcessing = false; // 强制释放锁
+                // 延迟显示中止提示，确保之前的 toast 已消失
+                setTimeout(() => {
+                    toastr.warning('规划任务已中止。');
+                }, 100);
+            }
+        });
       } catch (error) {
         console.error(`[${extension_name}] Initialization failed:`, error);
         if (window.original_TavernHelper_generate) {

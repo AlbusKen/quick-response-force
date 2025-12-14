@@ -127,12 +127,41 @@
     background: var(--background-color-secondary, rgba(40, 40, 40, 0.9));
     border-radius: 6px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    cursor: pointer; /* Add pointer cursor for clickable legend */
+    user-select: none;
+    display: flex;
+    align-items: center;
 }
 
 #qrf_settings_panel .settings-group legend i {
     margin-right: 10px;
     color: var(--primary, #00BFFF);
     font-size: 1.1em;
+}
+
+#qrf_settings_panel .settings-group legend .toggle-icon {
+    margin-right: 8px;
+    font-size: 0.8em;
+    transition: transform 0.3s ease;
+}
+
+#qrf_settings_panel .settings-group.collapsed legend .toggle-icon {
+    transform: rotate(-90deg);
+}
+
+#qrf_settings_panel .qrf-collapsible-content {
+    transition: max-height 0.3s ease-out, opacity 0.3s ease-out, padding 0.3s ease;
+    max-height: 2000px; /* Arbitrary large value */
+    opacity: 1;
+    overflow: hidden;
+}
+
+#qrf_settings_panel .settings-group.collapsed .qrf-collapsible-content {
+    max-height: 0;
+    opacity: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    margin: 0;
 }
 
 /* 4. 设置项布局与标签 */
@@ -672,4 +701,23 @@
     padding-top: 8px;
     border-top: 1px dashed rgba(255, 152, 0, 0.3);
     margin-top: 10px;
+}
+
+/* 20. Toast 中止按钮样式 */
+#toast-container .qrf-abort-btn {
+    margin-left: 5px;
+    padding: 2px 8px;
+    background-color: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    border-radius: 4px;
+    color: #fff;
+    cursor: pointer;
+    font-size: 0.85em;
+    transition: all 0.2s;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+#toast-container .qrf-abort-btn:hover {
+    background-color: rgba(255, 255, 255, 0.3);
 }
