@@ -176,12 +176,9 @@ export async function getCombinedWorldbookContent(context, apiSettings, userMess
     const triggeredArray = Array.from(triggeredEntries);
 
     // 排序逻辑：
-    // - 先输出可以参与递归的条目（prevent_recursion !== true）
-    // - 再输出“防止进一步递归”的条目（prevent_recursion === true）
-    // - 每一组内部：按 depth(order) 从小到大，同一深度内按名称稳定排序
-    const recursionGroup = triggeredArray.filter(e => !e.prevent_recursion);
-    const nonRecursionGroup = triggeredArray.filter(e => e.prevent_recursion);
-
+    // - 不再区分是否参与递归，统一按照 depth(order) 从小到大排序
+    // - 同一深度内按名称稳定排序
+    // - 这样可以确保关键词触发的条目也能按照用户预设的顺序插入
     const sortByDepth = (a, b) => {
       const aOrder = Number.isFinite(a.order) ? a.order : Infinity;
       const bOrder = Number.isFinite(b.order) ? b.order : Infinity;
@@ -189,9 +186,8 @@ export async function getCombinedWorldbookContent(context, apiSettings, userMess
       return (a.comment || '').localeCompare(b.comment || '');
     };
 
-    recursionGroup.sort(sortByDepth);
-    nonRecursionGroup.sort(sortByDepth);
-    const orderedEntries = recursionGroup.concat(nonRecursionGroup);
+    triggeredArray.sort(sortByDepth);
+    const orderedEntries = triggeredArray;
 
     const limit = apiSettings.worldbookCharLimit || 60000;
     const assembled = [];

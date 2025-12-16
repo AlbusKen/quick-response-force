@@ -8,7 +8,7 @@ import { defaultSettings } from './utils/settings.js';
 import { characters, eventSource, event_types, getRequestHeaders, saveSettings, this_chid } from '/script.js';
 import { extension_settings, getContext } from '/scripts/extensions.js';
 
-console.log('[剧情优化大师] v3.5.0 Loading... (Timestamp: ' + Date.now() + ')');
+console.log('[剧情优化大师] v3.5.1 Loading... (Timestamp: ' + Date.now() + ')');
 
 const extension_name = 'quick-response-force';
 let isProcessing = false;
