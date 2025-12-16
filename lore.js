@@ -3,15 +3,22 @@
 import { characters, this_chid } from '/script.js';
 
 const extensionName = 'quick-response-force';
+const blockedKeywords = ['规则', '思维链', 'cot', 'MVU', 'mvu', '变量', '状态', 'Status', 'Rule', 'rule', '检定', '判断', '叙事', '文风'];
+
+function isEntryBlocked(entry) {
+  const name = entry?.comment || entry?.name || '';
+  return blockedKeywords.some(keyword => name.includes(keyword));
+}
 
 /**
  * 获取合并后的世界书内容 (移植自数据库插件的先进逻辑)
  * @param {object} context - SillyTavern上下文
  * @param {object} apiSettings - API设置
  * @param {string} userMessage - 当前的用户输入
+ * @param {string} extraBaseText - 额外用于触发关键词的上下文（如上轮剧情 $6）
  * @returns {Promise<string>} - 合并后的、经过递归和关键词处理的世界书内容
  */
-export async function getCombinedWorldbookContent(context, apiSettings, userMessage) {
+export async function getCombinedWorldbookContent(context, apiSettings, userMessage, extraBaseText = '') {
   if (!apiSettings.worldbookEnabled) {
     return '';
   }
@@ -51,7 +58,10 @@ export async function getCombinedWorldbookContent(context, apiSettings, userMess
       if (bookName) {
         const entries = await window.TavernHelper.getLorebookEntries(bookName);
         if (entries?.length) {
-          entries.forEach(entry => allEntries.push({ ...entry, bookName }));
+          entries.forEach(entry => {
+            if (isEntryBlocked(entry)) return;
+            allEntries.push({ ...entry, bookName });
+          });
         }
       }
     }
@@ -88,15 +98,29 @@ export async function getCombinedWorldbookContent(context, apiSettings, userMess
       return '';
     }
 
+    const extraBaseLower = (extraBaseText || '').toLowerCase();
     // 4. 开始递归激活逻辑
-    const initialScanText = `${context.chat.map(message => message.mes).join('\n')}\n${
-      userMessage || ''
-    }`.toLowerCase();
     const getEntryKeywords = entry =>
       [...new Set([...(entry.key || []), ...(entry.keys || [])])].map(k => k.toLowerCase());
 
     const constantEntries = userEnabledEntries.filter(entry => entry.type === 'constant');
     let keywordEntries = userEnabledEntries.filter(entry => entry.type !== 'constant');
+
+    // 仅允许可递归的常量条目参与触发，防止“防递归”条目触发关键词
+    const recursionAllowedConstants = constantEntries.filter(e => !e.prevent_recursion);
+
+    // 将「最近若干轮聊天上下文」+ 可递归常量内容 + 额外触发文本（如$6）一起作为基础触发文本
+    // 为避免历史中过旧内容（例如早期所有 AM01-AM62 列表）导致大规模误触发，这里只取尾部若干条
+    const historyLimit = Number.isFinite(apiSettings.contextTurnCount)
+      ? Math.max(1, apiSettings.contextTurnCount)
+      : 3;
+    const chatArray = Array.isArray(context.chat) ? context.chat : [];
+    const recentMessages = historyLimit > 0 ? chatArray.slice(-historyLimit) : chatArray;
+    const historyAndUserText = `${recentMessages.map(message => message.mes).join('\n')}\n${
+      userMessage || ''
+    }`.toLowerCase();
+    const recursionAllowedConstantText = recursionAllowedConstants.map(e => e.content || '').join('\n').toLowerCase();
+    const initialScanText = [historyAndUserText, recursionAllowedConstantText, extraBaseLower].filter(Boolean).join('\n');
 
     const triggeredEntries = new Set([...constantEntries]);
     let recursionDepth = 0;
@@ -149,33 +173,55 @@ export async function getCombinedWorldbookContent(context, apiSettings, userMess
     }
 
     // 5. 格式化最终内容
-    const finalContent = Array.from(triggeredEntries)
-      .map(entry => {
-        if (entry.content && entry.content.trim()) {
-          return `[Worldbook Entry: ${entry.comment || `Entry from ${entry.bookName}`}]\n${entry.content}`;
-        }
-        return null;
-      })
-      .filter(Boolean);
+    const triggeredArray = Array.from(triggeredEntries);
 
-    if (finalContent.length === 0) {
+    // 排序逻辑：
+    // - 先输出可以参与递归的条目（prevent_recursion !== true）
+    // - 再输出“防止进一步递归”的条目（prevent_recursion === true）
+    // - 每一组内部：按 depth(order) 从小到大，同一深度内按名称稳定排序
+    const recursionGroup = triggeredArray.filter(e => !e.prevent_recursion);
+    const nonRecursionGroup = triggeredArray.filter(e => e.prevent_recursion);
+
+    const sortByDepth = (a, b) => {
+      const aOrder = Number.isFinite(a.order) ? a.order : Infinity;
+      const bOrder = Number.isFinite(b.order) ? b.order : Infinity;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return (a.comment || '').localeCompare(b.comment || '');
+    };
+
+    recursionGroup.sort(sortByDepth);
+    nonRecursionGroup.sort(sortByDepth);
+    const orderedEntries = recursionGroup.concat(nonRecursionGroup);
+
+    const limit = apiSettings.worldbookCharLimit || 60000;
+    const assembled = [];
+    let used = 0;
+
+    for (const entry of orderedEntries) {
+      if (!entry.content || !entry.content.trim()) continue;
+      const chunk = entry.content.trim(); // 仅使用条目内容，不再附加名称
+      const newLen = used + chunk.length + (assembled.length > 0 ? 2 : 0); // 2 for双换行
+      if (newLen > limit) {
+        // 如果还没放入任何内容且首条即超长，截断首条以保证优先级
+        if (assembled.length === 0 && chunk.length > limit) {
+          assembled.push(chunk.substring(0, limit));
+          used = limit;
+        }
+        break;
+      }
+      assembled.push(chunk);
+      used = newLen;
+    }
+
+    if (assembled.length === 0) {
       console.log(`[${extensionName}] No worldbook entries were ultimately triggered.`);
       return '';
     }
 
-    const combinedContent = finalContent.join('\n\n');
+    const combinedContent = assembled.join('\n\n');
     console.log(
-      `[${extensionName}] Combined worldbook content generated, length: ${combinedContent.length}. ${triggeredEntries.size} entries triggered.`,
+      `[${extensionName}] Combined worldbook content generated, length: ${combinedContent.length}. ${assembled.length} entries included.`,
     );
-
-    // 6. 应用字符数限制
-    const limit = apiSettings.worldbookCharLimit || 60000;
-    if (combinedContent.length > limit) {
-      console.log(
-        `[${extensionName}] Worldbook content truncated from ${combinedContent.length} to ${limit} characters.`,
-      );
-      return combinedContent.substring(0, limit);
-    }
 
     return combinedContent;
   } catch (error) {

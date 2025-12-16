@@ -124,13 +124,13 @@ export const defaultSettings = {
     extractTags: '', // [新功能] 标签摘取
     worldbookEnabled: true,
     worldbookSource: 'character', // 'character' or 'manual'
-    worldbookCharLimit: 60000,
+    worldbookCharLimit: 100000,
     rateMain: 15,
     ratePersonal: 10,
     rateErotic: 0,
     rateCuckold: 10,
     selectedWorldbooks: [], // 新增：存储选中的世界书
-    disabledWorldbookEntries: {}, // [功能更新] 只记录用户取消勾选的条目 { worldbookName: [uid1, uid2] }
+    disabledWorldbookEntries: '__ALL_SELECTED__', // 默认全选，若有取消勾选则记录 { worldbookName: [uid1, uid2] }
     prompts: [
       {
         id: 1764467961649,

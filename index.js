@@ -638,13 +638,13 @@ async function runOptimizationLogic(userMessage) {
       slicedContext = slicedAiHistory.map(msg => ({ role: 'assistant', content: msg.mes }));
     }
 
-    let worldbookContent = '';
-    if (apiSettings.worldbookEnabled) {
-      worldbookContent = await getCombinedWorldbookContent(context, apiSettings, userMessage);
-    }
-
     // [架构重构] 读取上一轮优化结果，用于$6占位符
     const lastPlotContent = getPlotFromHistory();
+
+    let worldbookContent = '';
+    if (apiSettings.worldbookEnabled) {
+      worldbookContent = await getCombinedWorldbookContent(context, apiSettings, userMessage, lastPlotContent);
+    }
 
     let tableDataContent = '';
     try {
@@ -803,13 +803,32 @@ async function runOptimizationLogic(userMessage) {
         if (tagNames.length > 0) {
           const extractedParts = [];
 
+          // [健全性] 仅提取“最后一组”标签的内容（支持处理类似 <key>123<key>456</key> 的异常嵌套）
+          // 规则：找到最后一个 </tag>，再回溯找到它之前最近的 <tag>，只取两者之间的内容。
+          const extractLastTagContent = (text, rawTagName) => {
+            if (!text || !rawTagName) return null;
+            const tagName = String(rawTagName).trim();
+            if (!tagName) return null;
+
+            const lower = text.toLowerCase();
+            const open = `<${tagName.toLowerCase()}>`;
+            const close = `</${tagName.toLowerCase()}>`;
+
+            const closeIdx = lower.lastIndexOf(close);
+            if (closeIdx === -1) return null;
+
+            const openIdx = lower.lastIndexOf(open, closeIdx);
+            if (openIdx === -1) return null;
+
+            const contentStart = openIdx + open.length;
+            const content = text.slice(contentStart, closeIdx);
+            return content;
+          };
+
           tagNames.forEach(tagName => {
-            const safeTagName = escapeRegExp(tagName);
-            const regex = new RegExp(`<${safeTagName}>([\\s\\S]*?)<\\/${safeTagName}>`, 'gi');
-            const matches = processedMessage.match(regex);
-            // [逻辑修改] 只提取最后一个满足条件的标签
-            if (matches && matches.length > 0) {
-              extractedParts.push(matches[matches.length - 1]);
+            const content = extractLastTagContent(processedMessage, tagName);
+            if (content !== null) {
+              extractedParts.push(`<${tagName}>${content}</${tagName}>`);
             }
           });
 
