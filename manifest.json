@@ -1,7 +1,7 @@
 {
     "name": "剧情优化大师",
     "display_name": "剧情优化大师",
-    "version": "3.0.0",
+    "version": "3.5.0",
     "author": "Cline",
     "description": "一个独立的聊天优化插件，通过在生成前预处理用户输入，增强上下文和关键词，从而提升故事叙述的质量。",
     "minSillyTavernVersion": "1.10.0",
