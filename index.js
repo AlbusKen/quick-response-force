@@ -5,6 +5,7 @@ import { callInterceptionApi } from './api.js';
 import { getCombinedWorldbookContent } from './lore.js';
 import { createDrawer } from './ui/drawer.js';
 import { defaultSettings } from './utils/settings.js';
+import { extractContentByTag, replaceContentByTag, extractFullTagBlock, extractAllTags } from './utils/tagProcessor.js';
 import { characters, eventSource, event_types, getRequestHeaders, saveSettings, this_chid } from '/script.js';
 import { extension_settings, getContext } from '/scripts/extensions.js';
 
@@ -694,13 +695,8 @@ async function runOptimizationLogic(userMessage) {
     let finalSystemDirectiveContent =
       '[SYSTEM_DIRECTIVE: You are a storyteller. The following <plot> block is your absolute script for this turn. You MUST follow the <directive> within it to generate the story.]';
 
-    // 格式化历史记录用于注入
-    const sanitizeHtml = htmlString => {
-      const tempDiv = document.createElement('div');
-      tempDiv.innerHTML = htmlString;
-      return tempDiv.textContent || tempDiv.innerText || '';
-    };
 
+    const finalApiSettings = { ...apiSettings, extractTags: apiSettings.extractTags, extractTagsFromInput: apiSettings.extractTagsFromInput };
     let fullHistory = [];
     if (slicedContext && Array.isArray(slicedContext)) {
       fullHistory = [...slicedContext];
@@ -708,7 +704,32 @@ async function runOptimizationLogic(userMessage) {
     if (userMessage) {
       fullHistory.push({ role: 'user', content: userMessage });
     }
-    const formattedHistory = fullHistory.map(msg => `${msg.role}："${sanitizeHtml(msg.content)}"`).join(' \n ');
+    // [新功能] 从历史记录中提取标签
+    const tagsToExtractFromInput = (finalApiSettings.extractTagsFromInput || '').trim();
+    if (tagsToExtractFromInput) {
+        const tagNames = tagsToExtractFromInput.split(',').map(t => t.trim()).filter(t => t);
+
+        // 提取所有匹配的标签内容
+        const extractedContents = [];
+        fullHistory.forEach(msg => {
+            tagNames.forEach(tagName => {
+                const matches = extractAllTags(msg.content, tagName);
+                if (matches && matches.length > 0) {
+                    // 将提取的字符串转换为与fullHistory相同的对象结构
+                    matches.forEach(content => {
+                        extractedContents.push({ role: msg.role, content: content });
+                    });
+                }
+            });
+        });
+
+        // 如果有提取的内容，构建新的历史记录
+        if (extractedContents.length > 0) {
+            fullHistory = extractedContents;
+        }
+    }
+
+    const formattedHistory = fullHistory.map(msg => `${msg.role}："${msg.content}"`).join(' \n ');
 
     const prompts = apiSettings.prompts || [];
 
@@ -738,7 +759,6 @@ async function runOptimizationLogic(userMessage) {
       });
     }
 
-    const finalApiSettings = { ...apiSettings, extractTags: apiSettings.extractTags };
     const minLength = settings.minLength || 0;
     let processedMessage = null;
     const maxRetries = 3;
@@ -841,6 +861,26 @@ async function runOptimizationLogic(userMessage) {
           }
         }
       }
+      
+       // [新功能] 从 messageForTavern 中提取 AMxx 格式内容，按数字从大到小排序
+      const amRegex = /\bAM\d{2}(?:,\s*AM\d{2})*\b/g;
+      messageForTavern = messageForTavern.replace(amRegex, (match) => {
+        // 提取所有的 AMxx
+        const amMatches = match.match(/\bAM\d{2}\b/g);
+        if (!amMatches || amMatches.length === 0) {
+          return match;
+        }
+
+        // 按数字从大到小排序
+        const sortedAm = amMatches.sort((a, b) => {
+          const numA = parseInt(a.substring(2), 10);
+          const numB = parseInt(b.substring(2), 10);
+          return numA - numB;
+        });
+
+        // 用逗号连接排序后的结果
+        return sortedAm.join(',');
+      });
 
       // 使用可能被处理过的 messageForTavern 构建最终消息
       const finalMessage = `${userMessage}\n\n${finalSystemDirectiveContent}\n${messageForTavern}`;

@@ -47,5 +47,26 @@ function replaceContentByTag(originalText, tagName, newContent) {
     return originalText; // 如果没有找到匹配的标签，则返回原文
 }
 
+/**
+ * 提取字符串中所有指定标签的内容。
+ * @param {string} text - 要搜索的文本。
+ * @param {string} tagName - 要提取内容的标签名。
+ * @returns {string[]} - 标签内的内容数组。
+ */
+function extractAllTags(text, tagName) {
+    const regex = new RegExp(`<${tagName}[^>]*>([\\s\\S]*?)<\\/${tagName}>`, 'gi');
+    const matches = text.match(regex);
+    if (!matches) return [];
 
-export { extractContentByTag, replaceContentByTag, extractFullTagBlock };
+    const contents = [];
+    matches.forEach(match => {
+        const contentMatch = match.match(new RegExp(`<${tagName}[^>]*>([\\s\\S]*?)<\\/${tagName}>`, 'i'));
+        if (contentMatch && contentMatch[1]) {
+            contents.push(contentMatch[1].trim());
+        }
+    });
+    return contents;
+}
+
+
+export { extractContentByTag, replaceContentByTag, extractFullTagBlock, extractAllTags };

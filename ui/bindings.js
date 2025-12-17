@@ -694,6 +694,7 @@ function saveAsNewPreset(panel) {
     rateCuckold: parseFloat(panel.find('#qrf_rate_cuckold').val()),
     // [新功能] 导出时包含新增的设置
     extractTags: panel.find('#qrf_extract_tags').val(),
+    extractTagsFromInput: panel.find('#qrf_extract_tags_from_input').val(),
     minLength: parseInt(panel.find('#qrf_min_length').val(), 10),
     contextTurnCount: parseInt(panel.find('#qrf_context_turn_count').val(), 10),
     worldbookCharLimit: parseInt(panel.find('#qrf_worldbook_char_limit').val(), 10),
@@ -757,6 +758,7 @@ function overwriteSelectedPreset(panel) {
     rateCuckold: parseFloat(panel.find('#qrf_rate_cuckold').val()),
     // [新功能] 覆盖时包含新增的设置
     extractTags: panel.find('#qrf_extract_tags').val(),
+    extractTagsFromInput: panel.find('#qrf_extract_tags_from_input').val(),
     minLength: parseInt(panel.find('#qrf_min_length').val(), 10),
     contextTurnCount: parseInt(panel.find('#qrf_context_turn_count').val(), 10),
     worldbookCharLimit: parseInt(panel.find('#qrf_worldbook_char_limit').val(), 10),
@@ -986,6 +988,7 @@ function loadSettings(panel) {
 
   // 加载标签摘取设置
   panel.find('#qrf_extract_tags').val(apiSettings.extractTags || '');
+  panel.find('#qrf_extract_tags_from_input').val(apiSettings.extractTagsFromInput || '');
 
   // [新功能] 加载自动化循环设置
   // Defensive coding: Ensure loopSettings is an object even if defaults are missing/cached
@@ -1348,6 +1351,7 @@ export function initializeBindings() {
         rateCuckold: selectedPreset.rateCuckold ?? 1.0,
         // [新功能] 加载预设时应用新设置
         extractTags: selectedPreset.extractTags || '',
+        extractTagsFromInput: selectedPreset.extractTagsFromInput || '',
         minLength: selectedPreset.minLength ?? defaultSettings.minLength,
         contextTurnCount: selectedPreset.contextTurnCount ?? defaultSettings.apiSettings.contextTurnCount,
         worldbookCharLimit: selectedPreset.worldbookCharLimit ?? defaultSettings.apiSettings.worldbookCharLimit,
@@ -1360,6 +1364,7 @@ export function initializeBindings() {
       panel.find('#qrf_rate_erotic').val(presetData.rateErotic);
       panel.find('#qrf_rate_cuckold').val(presetData.rateCuckold);
       panel.find('#qrf_extract_tags').val(presetData.extractTags);
+      panel.find('#qrf_extract_tags_from_input').val(presetData.extractTagsFromInput);
       panel.find('#qrf_min_length').val(presetData.minLength);
       panel.find('#qrf_context_turn_count').val(presetData.contextTurnCount);
       panel.find('#qrf_worldbook_char_limit').val(presetData.worldbookCharLimit);
