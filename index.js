@@ -9,7 +9,7 @@ import { extractContentByTag, replaceContentByTag, extractFullTagBlock, extractA
 import { characters, eventSource, event_types, getRequestHeaders, saveSettings, this_chid } from '/script.js';
 import { extension_settings, getContext } from '/scripts/extensions.js';
 
-console.log('[剧情优化大师] v2.1.0 Loading... (Timestamp: ' + Date.now() + ')');
+console.log('[剧情优化大师] v3.5.1 Loading... (Timestamp: ' + Date.now() + ')');
 
 const extension_name = 'quick-response-force';
 let isProcessing = false;
@@ -374,7 +374,15 @@ async function enterLoopRetryFlow({ loopSettings, shouldDeleteAiReply }) {
       await new Promise(r => setTimeout(r, 500));
       busyWait++;
     }
-    await triggerDirectRegenerateForLoop(loopSettings);
+    try {
+      await triggerDirectRegenerateForLoop(loopSettings);
+    } catch (err) {
+      console.error(`[${extension_name}] [重试] 触发生成失败:`, err);
+      // 如果仍在循环中，则按重试逻辑继续（不删除楼层，因为没有生成成功）
+      if (loopState.isLooping) {
+        await enterLoopRetryFlow({ loopSettings, shouldDeleteAiReply: false });
+      }
+    }
   }, (loopSettings.retryDelay || 3) * 1000);
 }
 
@@ -430,6 +438,18 @@ async function onLoopGenerationEnded() {
     console.warn(`[${extension_name}] [Loop] 未找到AI回复楼层，进入重试。`);
     loopState.awaitingReply = false; // 本次检测结束
     await enterLoopRetryFlow({ loopSettings, shouldDeleteAiReply: false });
+    return;
+  }
+
+  // [健全性] 忽略来自其他扩展 / 虚拟角色（如数据库插件）的 AI 回复：
+  // 仅当最新 AI 回复的说话人名称与当前聊天角色名称匹配时，才进行标签检测。
+  const activeChar = characters?.[this_chid];
+  const activeCharName = activeChar?.name;
+  if (activeCharName && lastMessage.name && lastMessage.name !== activeCharName) {
+    console.log(
+      `[${extension_name}] [Loop] 检测到来自其他角色/扩展的AI回复(name=${lastMessage.name})，与当前角色(${activeCharName})不符，忽略本次 GENERATION_ENDED。`
+    );
+    // 继续等待真正属于当前角色的AI回复
     return;
   }
 
@@ -619,13 +639,13 @@ async function runOptimizationLogic(userMessage) {
       slicedContext = slicedAiHistory.map(msg => ({ role: 'assistant', content: msg.mes }));
     }
 
-    let worldbookContent = '';
-    if (apiSettings.worldbookEnabled) {
-      worldbookContent = await getCombinedWorldbookContent(context, apiSettings, userMessage);
-    }
-
     // [架构重构] 读取上一轮优化结果，用于$6占位符
     const lastPlotContent = getPlotFromHistory();
+
+    let worldbookContent = '';
+    if (apiSettings.worldbookEnabled) {
+      worldbookContent = await getCombinedWorldbookContent(context, apiSettings, userMessage, lastPlotContent);
+    }
 
     let tableDataContent = '';
     try {
@@ -803,13 +823,32 @@ async function runOptimizationLogic(userMessage) {
         if (tagNames.length > 0) {
           const extractedParts = [];
 
+          // [健全性] 仅提取“最后一组”标签的内容（支持处理类似 <key>123<key>456</key> 的异常嵌套）
+          // 规则：找到最后一个 </tag>，再回溯找到它之前最近的 <tag>，只取两者之间的内容。
+          const extractLastTagContent = (text, rawTagName) => {
+            if (!text || !rawTagName) return null;
+            const tagName = String(rawTagName).trim();
+            if (!tagName) return null;
+
+            const lower = text.toLowerCase();
+            const open = `<${tagName.toLowerCase()}>`;
+            const close = `</${tagName.toLowerCase()}>`;
+
+            const closeIdx = lower.lastIndexOf(close);
+            if (closeIdx === -1) return null;
+
+            const openIdx = lower.lastIndexOf(open, closeIdx);
+            if (openIdx === -1) return null;
+
+            const contentStart = openIdx + open.length;
+            const content = text.slice(contentStart, closeIdx);
+            return content;
+          };
+
           tagNames.forEach(tagName => {
-            const safeTagName = escapeRegExp(tagName);
-            const regex = new RegExp(`<${safeTagName}>([\\s\\S]*?)<\\/${safeTagName}>`, 'gi');
-            const matches = processedMessage.match(regex);
-            // [逻辑修改] 只提取最后一个满足条件的标签
-            if (matches && matches.length > 0) {
-              extractedParts.push(matches[matches.length - 1]);
+            const content = extractLastTagContent(processedMessage, tagName);
+            if (content !== null) {
+              extractedParts.push(`<${tagName}>${content}</${tagName}>`);
             }
           });
 
@@ -1081,6 +1120,15 @@ jQuery(async () => {
             isProcessing = true;
             try {
               const finalMessage = await runOptimizationLogic(userMessage);
+
+              // [新增] 如果处于自动循环且规划未返回有效字符串，视为规划失败，按循环重试次数重试
+              if (loopState.isLooping && loopState.awaitingReply && (!finalMessage || typeof finalMessage !== 'string')) {
+                console.warn(`[${extension_name}] [Loop] 规划未产生有效回复，按循环重试规则重试。`);
+                const loopSettings = (extension_settings[extension_name] || {}).loopSettings || defaultSettings.loopSettings;
+                loopState.awaitingReply = false; // 结束本轮等待
+                await enterLoopRetryFlow({ loopSettings, shouldDeleteAiReply: false });
+                return; // 不调用原始生成
+              }
 
               // 检查是否被中止 (返回了带有 aborted: true 的对象)
               if (finalMessage && finalMessage.aborted) {
